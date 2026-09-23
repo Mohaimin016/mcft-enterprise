@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-12">
+<meta name="mcft-build" content="20260923-13">
 <title>MCFT Enterprise - Online Viewer</title>
 
 <style>
@@ -501,11 +501,11 @@ const app = {
         const [members,investors,fleets]=await Promise.all([
           this.getAll('members'),this.getAll('investors'),this.getAll('fleets')
         ]);
-        const mm=new Map((members||[]).map(x=>[x.id,x]));
-        const im=new Map((investors||[]).map(x=>[x.id,x]));
-        const fm=new Map((fleets||[]).map(x=>[x.id,x]));
+        const mm=new Map((members||[]).map(x=>[String(x.id),x]));
+        const im=new Map((investors||[]).map(x=>[String(x.id),x]));
+        const fm=new Map((fleets||[]).map(x=>[String(x.id),x]));
         return (data||[]).map(t=>{
-          const m=mm.get(t.member_id),i=im.get(t.investor_id),f=fm.get(t.fleet_id);
+          const m=mm.get(String(t.member_id||"")),i=im.get(String(t.investor_id||"")),f=fm.get(String(t.fleet_id||""));
           return this.fromDbTransaction({...t,member_name:m?.name||'',investor_name:i?.name||'',vehicle_name:f?.vehicle_name||'',vehicle_number:f?.vehicle_number||''});
         });
       }
@@ -524,11 +524,11 @@ const app = {
       const [members,investors,fleets]=await Promise.all([
         this.getAll('members'),this.getAll('investors'),this.getAll('fleets')
       ]);
-      const mm=new Map((members||[]).map(x=>[x.id,x]));
-      const im=new Map((investors||[]).map(x=>[x.id,x]));
-      const fm=new Map((fleets||[]).map(x=>[x.id,x]));
+      const mm=new Map((members||[]).map(x=>[String(x.id),x]));
+      const im=new Map((investors||[]).map(x=>[String(x.id),x]));
+      const fm=new Map((fleets||[]).map(x=>[String(x.id),x]));
       return (data||[]).map(t=>{
-        const m=mm.get(t.member_id),i=im.get(t.investor_id),f=fm.get(t.fleet_id);
+        const m=mm.get(String(t.member_id||"")),i=im.get(String(t.investor_id||"")),f=fm.get(String(t.fleet_id||""));
         return this.fromDbTransaction({...t,member_name:m?.name||'',investor_name:i?.name||'',vehicle_name:f?.vehicle_name||'',vehicle_number:f?.vehicle_number||''});
       });
     }
@@ -1763,8 +1763,7 @@ window.numericExcelAmount = function(v){
     const installmentAmount=5000;
     return members.map(u=>{
       const x=agg.get(u.id)||{count:0,total:0,last:'',months:{}};
-      const missingMonths=[],missingLabels=[];let pendingAmount=0;
-      for(const m of months){const paid=Number(x.months[m]||0);const pending=Math.max(0,installmentAmount-paid);if(pending>0){pendingAmount+=pending;missingMonths.push(m);missingLabels.push(this.formatMissingMonth(m));}}
+      const missingMonths=[],missingLabels=[];for(const m of months){if(!Number(x.months[m]||0)){missingMonths.push(m);missingLabels.push(this.formatMissingMonth(m));}}const pendingAmount=Math.max(0,months.length*installmentAmount-x.total);
       return {id:u.id,name:String(u.name||'').trim(),count:x.count,total:x.total,pendingAmount,missingMonths,missingLabels,last:x.last};
     }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
   };
@@ -1841,7 +1840,7 @@ window.numericExcelAmount = function(v){
       const fleetMap=new Map((await this.getAll('fleets')).map(x=>[String(x.id),x.name||x.vehicleName||'']));
       headers=['#','ID','Type','Investor Name','Fleet Name','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];
       rows=data.map((t,i)=>{
-        const investorName=t.investorName||investorMap.get(String(t.investorId||''))||'';
+        const investorName=t.investorName||investorMap.get(String(t.investorId||""))||(t.entityType==="INVESTOR"?(t.depositor||t.memberName||""):"");
         const fleetName=t.fleetName||fleetMap.get(String(t.fleetId||''))||'';
         return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',investorName,fleetName,t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.details,t.status];
       });
