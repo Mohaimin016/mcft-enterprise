@@ -1444,5 +1444,501 @@ window.numericExcelAmount = function(v){
 };
 </script>
 
+<script>
+/* MCFT PERFORMANCE OPTIMIZATION V2 */
+(function(){
+  'use strict';
+  if(!window.app){ return; }
+
+  app._perf={
+    tx:null, txAt:0, txPending:null,
+    masters:{members:null,investors:null,fleets:null},
+    masterTtl:60000,
+    custom:null, customAt:0, customPending:null, customTtl:60000,
+    refreshInFlight:false, savingCashIn:false, savingCashOut:false,
+    renderToken:0, scoreTimer:null, visibilityBound:false
+  };
+
+  const origGetAll=app.getAll.bind(app);
+  const origGetCustomData=app.getCustomData.bind(app);
+  const origInsert=app.insertOnlineTransaction.bind(app);
+  const origFilterScore=app.filterScorecardPopup.bind(app);
+
+  app.invalidatePerf=function(){
+    this._perf.tx=null;
+    this._perf.txAt=0;
+    this._perf.masters={members:null,investors:null,fleets:null};
+  };
+
+  app.invalidateCustom=function(){
+    this._perf.custom=null;
+    this._perf.customAt=0;
+    this._perf.customPending=null;
+  };
+
+  app.getAll=async function(store,options){
+    const force=!!(options&&options.force);
+    const now=Date.now();
+
+    if(store==='transactions'){
+      if(!force && Array.isArray(this._perf.tx)) return this._perf.tx;
+      if(this._perf.txPending) return this._perf.txPending;
+      const p=origGetAll('transactions');
+      this._perf.txPending=p;
+      try{
+        const data=await p;
+        this._perf.tx=Array.isArray(data)?data:[];
+        this._perf.txAt=Date.now();
+        this._dashboardTransactions=this._perf.tx;
+        return this._perf.tx;
+      }finally{
+        this._perf.txPending=null;
+      }
+    }
+
+    if(store==='members'||store==='investors'||store==='fleets'){
+      const c=this._perf.masters[store];
+      const authMode=!!this.user;
+      if(!force && c && c.authMode===authMode && (now-c.ts)<this._perf.masterTtl) return c.data;
+      const data=await origGetAll(store);
+      this._perf.masters[store]={data:Array.isArray(data)?data:[],ts:Date.now(),authMode:authMode};
+      return this._perf.masters[store].data;
+    }
+
+    return origGetAll(store);
+  };
+
+  app.getCustomData=async function(force){
+    if(!force && this._perf.custom && (Date.now()-this._perf.customAt)<this._perf.customTtl) return this._perf.custom;
+    if(!force && this._perf.customPending) return this._perf.customPending;
+    const p=origGetCustomData();
+    this._perf.customPending=p;
+    try{
+      const data=await p;
+      this._perf.custom=data;
+      this._perf.customAt=Date.now();
+      return data;
+    }finally{
+      this._perf.customPending=null;
+    }
+  };
+
+  app.updateHealth=async function(txs){
+    try{
+      const txData=Array.isArray(txs)?txs:(this._dashboardTransactions||await this.getAll('transactions'));
+      const [investors,fleets]=await Promise.all([this.getAll('investors'),this.getAll('fleets')]);
+      const h=document.getElementById('dbHealth');
+      if(h) h.textContent='Database: Supabase OK · '+txData.length+' transactions · '+investors.length+' investors · '+fleets.length+' fleets';
+      const b=document.getElementById('backupHealth');
+      if(b){
+        const last=await this.getSettings('lastBackupAt');
+        if(!last){ b.textContent='Backup: never'; }
+        else{
+          const age=Date.now()-new Date(last).getTime();
+          b.textContent='Backup: '+(age>86400000?'DUE':'OK');
+          b.style.color=age>86400000?'#ffd1d1':'#d1fae5';
+        }
+      }
+    }catch(e){
+      const h=document.getElementById('dbHealth');
+      if(h){h.textContent='Database: ERROR';h.style.color='#ffd1d1';}
+      console.error('[MCFT health]',e);
+    }
+  };
+
+  app.insertOnlineTransaction=async function(tx){
+    if(!this.canWrite) throw new Error('Login required.');
+    let member_id=null, investor_id=null, fleet_id=null;
+    const findCachedId=async(store,name)=>{
+      const wanted=String(name||'').trim().toLowerCase();
+      if(!wanted) return null;
+      let rows=this._perf.masters[store]?.data;
+      if(!rows) rows=await this.getAll(store);
+      const hit=(rows||[]).find(x=>String(x.name||'').trim().toLowerCase()===wanted);
+      return hit?.id||null;
+    };
+    if(tx.entityType==='MEMBER'){member_id=await findCachedId('members',tx.memberName);if(!member_id)throw new Error('Member not found.');}
+    if(tx.entityType==='INVESTOR'){investor_id=await findCachedId('investors',tx.investorName);if(!investor_id)throw new Error('Investor not found.');}
+    if(tx.entityType==='FLEET'){fleet_id=await findCachedId('fleets',tx.fleetName);if(!fleet_id)throw new Error('Vehicle/Fleet not found.');}
+
+    const capturedAt=new Date();
+    const row={
+      transaction_id:tx.transactionId, transaction_date:tx.date, capture_date:capturedAt.toISOString(),
+      flow:tx.type, entity_type:tx.entityType, member_id, investor_id, fleet_id,
+      category:tx.category, purpose:tx.purpose, amount:Number(tx.amount), details:tx.details||'',
+      status:'ACTIVE', created_by:this.user.id, withdrawal_person:tx.withdrawalPerson||'',
+      payee_phone:tx.payeePhone||'', costing_point:tx.costingPoint||'',
+      payment_mode:tx.paymentMode||'', approval_status:tx.approvalStatus||'',
+      voucher_number:tx.voucherNumber||''
+    };
+    const {data,error}=await this.sb.from('transactions').insert(row).select('id').single();
+    if(error){
+      if(error.code==='23505') throw new Error('Duplicate transaction ID detected.');
+      throw error;
+    }
+    return Object.assign({},tx,{
+      id:data?.id||null,memberId:member_id,investorId:investor_id,fleetId:fleet_id,
+      captureDate:capturedAt.toISOString().slice(0,10),
+      captureDateTime:capturedAt.toLocaleString('en-GB'),
+      createdAt:capturedAt.toLocaleString('en-GB'),status:'ACTIVE'
+    });
+  };
+
+  app.setEntryButtonState=function(formId,busy,successText){
+    const form=document.getElementById(formId);
+    const btn=form?.querySelector('button[type="submit"]');
+    if(!btn)return;
+    if(busy){
+      if(!btn.dataset.originalText)btn.dataset.originalText=btn.textContent;
+      btn.disabled=true;btn.style.opacity='0.7';btn.textContent='Saving…';
+    }else{
+      btn.disabled=false;btn.style.opacity='';
+      btn.textContent=successText||btn.dataset.originalText||btn.textContent;
+      if(successText) setTimeout(()=>{if(btn.dataset.originalText)btn.textContent=btn.dataset.originalText;},1200);
+    }
+  };
+
+  app.clearCashInAfterSave=function(){
+    ['cashInAmount','cashInDetails','cashInMemberPhone','cashInInvestorPhone','cashInFleetNumber'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+    this.setDates();
+  };
+  app.clearCashOutAfterSave=function(){
+    ['cashOutAmount','cashOutPhone','cashOutCostingPoint','cashOutVoucher','cashOutDetails','cashOutMemberPhone','cashOutInvestorPhone','cashOutFleetNumber'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+    this.setDates();
+  };
+
+  app.queuePostSaveRefresh=function(saved){
+    this._perf.tx=Array.isArray(this._perf.tx)
+      ? [saved].concat(this._perf.tx.filter(x=>x.id!==saved.id&&x.transactionId!==saved.transactionId))
+      : [saved];
+    this._perf.txAt=Date.now();
+    this._dashboardTransactions=this._perf.tx;
+    setTimeout(()=>{
+      const txs=this._dashboardTransactions||[];
+      if(this.currentSection==='dashboard')this.render(txs).catch(e=>console.error('[MCFT render]',e));
+      else if(this.currentSection==='investor')this.renderInvestors(txs).catch(e=>console.error('[MCFT investor]',e));
+      else if(this.currentSection==='fleets')this.renderFleets(txs).catch(e=>console.error('[MCFT fleet]',e));
+      else if(this.currentSection==='entry')this.renderHistory(txs).catch(e=>console.error('[MCFT history]',e));
+      this.updateHealth(txs).catch(e=>console.error('[MCFT health]',e));
+    },0);
+  };
+
+  app.addCashIn=async function(){
+    if(!this.requireEntry()||this._perf.savingCashIn)return;
+    const now=new Date();
+    const type=document.getElementById('cashInType').value;
+    const amount=Number(document.getElementById('cashInAmount').value)||0;
+    const member=document.getElementById('cashInMember').value;
+    const investor=document.getElementById('cashInInvestor').value;
+    const fleet=document.getElementById('cashInFleet').value;
+    const entityName=type==='MEMBER'?member:type==='INVESTOR'?investor:type==='FLEET'?fleet:'';
+    const tx={
+      transactionId:'FIN-'+Date.now(),type:'CASH_IN',flowCategory:type,
+      date:document.getElementById('cashInDate').value,time:now.toTimeString().slice(0,8),amount,
+      category:document.getElementById('cashInCategory').value,purpose:document.getElementById('cashInPurpose').value,
+      depositor:entityName,entityType:type,investorName:type==='INVESTOR'?investor:'',
+      fleetName:type==='FLEET'?fleet:'',memberName:type==='MEMBER'?member:'',
+      withdrawalPerson:'',details:document.getElementById('cashInDetails').value.trim(),status:'ACTIVE'
+    };
+    if((type==='MEMBER'||type==='INVESTOR'||type==='FLEET')&&!entityName){alert('Please select the required person/vehicle.');return;}
+    if(amount<=0){alert('Please enter a valid amount.');return;}
+    if(!confirm('Confirm Cash In\n\nType: '+type+'\nDate: '+tx.date+'\nAmount: '+this.fmt(amount)+'\n'+(entityName?'Name: '+entityName+'\n':'')+'Purpose: '+tx.purpose+'\n\nSave this transaction?'))return;
+    this._perf.savingCashIn=true;this.setEntryButtonState('cashInForm',true);
+    try{
+      const saved=await this.insertOnlineTransaction(tx);
+      this.clearCashInAfterSave();
+      this.setEntryButtonState('cashInForm',false,'✅ Saved');
+      this.queuePostSaveRefresh(saved);
+    }catch(e){
+      this.setEntryButtonState('cashInForm',false);
+      alert('Cash In failed: '+e.message);
+    }finally{this._perf.savingCashIn=false;}
+  };
+
+  app.addCashOut=async function(){
+    if(!this.requireEntry()||this._perf.savingCashOut)return;
+    const now=new Date();
+    const type=document.getElementById('cashOutType').value;
+    const amount=Number(document.getElementById('cashOutAmount').value)||0;
+    const investor=document.getElementById('cashOutInvestor').value;
+    const fleet=document.getElementById('cashOutFleet').value;
+    const member=document.getElementById('cashOutMember').value;
+    let entityName='',purpose=document.getElementById('cashOutPurpose').value,withdrawalPerson=document.getElementById('cashOutPerson').value;
+    if(type==='INVESTOR')entityName=investor;
+    if(type==='FLEET')entityName=fleet;
+    if(type==='MEMBER'){entityName=member;withdrawalPerson=member;}
+    const tx={
+      transactionId:'FIN-'+Date.now(),type:'CASH_OUT',flowCategory:type,date:document.getElementById('cashOutDate').value,amount,
+      category:document.getElementById('cashOutCategory').value,purpose,depositor:'',withdrawalPerson,
+      entityType:type==='EXPENSE'?'OTHER':type,investorName:type==='INVESTOR'?investor:'',
+      fleetName:type==='FLEET'?fleet:'',memberName:type==='MEMBER'?member:'',
+      payeePhone:document.getElementById('cashOutPhone').value.trim(),
+      costingPoint:document.getElementById('cashOutCostingPoint').value.trim(),
+      paymentMode:document.getElementById('cashOutPaymentMode').value,
+      approvalStatus:document.getElementById('cashOutApproval').value,
+      voucherNumber:document.getElementById('cashOutVoucher').value.trim(),
+      details:document.getElementById('cashOutDetails').value.trim(),status:'ACTIVE'
+    };
+    if(type==='INVESTOR'&&!investor){alert('Please select an investor.');return;}
+    if(type==='FLEET'&&!fleet){alert('Please select a vehicle / fleet.');return;}
+    if(type==='MEMBER'&&!member){alert('Please select a member.');return;}
+    if(type==='EXPENSE'&&!withdrawalPerson){alert('Please select a withdrawal person.');return;}
+    if(amount<=0){alert('Please enter a valid amount.');return;}
+    if(!confirm('Confirm Cash Out\n\nType: '+type+'\nDate: '+tx.date+'\nAmount: '+this.fmt(amount)+'\n'+(entityName?'Name: '+entityName+'\n':'')+'Purpose: '+purpose+'\n\nSave this transaction?'))return;
+    this._perf.savingCashOut=true;this.setEntryButtonState('cashOutForm',true);
+    try{
+      const saved=await this.insertOnlineTransaction(tx);
+      this.clearCashOutAfterSave();
+      this.setEntryButtonState('cashOutForm',false,'✅ Saved');
+      this.queuePostSaveRefresh(saved);
+    }catch(e){
+      this.setEntryButtonState('cashOutForm',false);
+      alert('Cash Out failed: '+e.message);
+    }finally{this._perf.savingCashOut=false;}
+  };
+
+  const origRender=app.render.bind(app);
+  app.render=async function(preloadedTxs){
+    const all=Array.isArray(preloadedTxs)?preloadedTxs:(this._dashboardTransactions||await this.getAll('transactions'));
+    this._dashboardTransactions=all;
+    const token=++this._perf.renderToken;
+    const activeRows=this.getRange();
+    const active=all.filter(t=>t.status!=='VOID'&&(!activeRows.from||t.date>=activeRows.from)&&(!activeRows.to||t.date<=activeRows.to));
+    let cin=0,cout=0,cinCount=0,coutCount=0,activeCount=0,voidCount=0;
+    for(const t of active){if(t.type==='CASH_IN'){cin+=Number(t.amount||0);cinCount++;}else if(t.type==='CASH_OUT'){cout+=Number(t.amount||0);coutCount++;}}
+    for(const t of all){if(t.status==='VOID')voidCount++;else activeCount++;}
+    document.getElementById('totalCashIn').textContent=this.fmt(cin);
+    document.getElementById('totalCashOut').textContent=this.fmt(cout);
+    document.getElementById('currentBalance').textContent=this.fmt(cin-cout);
+    document.getElementById('totalCashInCount').textContent=cinCount+' Entries';
+    document.getElementById('totalCashOutCount').textContent=coutCount+' Expense Entries';
+    const today=this.today();
+    let tin=0,tout=0,tinc=0,toutc=0;
+    for(const t of all){
+      if(t.status==='VOID'||t.date!==today)continue;
+      if(t.type==='CASH_IN'){tin+=Number(t.amount||0);tinc++;}
+      else if(t.type==='CASH_OUT'){tout+=Number(t.amount||0);toutc++;}
+    }
+    document.getElementById('todayCashIn').textContent=this.fmt(tin);
+    document.getElementById('todayCashOut').textContent=this.fmt(tout);
+    document.getElementById('todayBalance').textContent=this.fmt(tin-tout);
+    document.getElementById('todayCashInCount').textContent=tinc+' Entries';
+    document.getElementById('todayCashOutCount').textContent=toutc+' Expense Entries';
+    document.getElementById('activeEntries').textContent=activeCount;
+    document.getElementById('voidEntries').textContent=voidCount;
+    const members=await this.memberPortalRows(all);
+    const non=members.filter(x=>x.pendingAmount>0);
+    document.getElementById('notDepositorUsers').textContent=non.length;
+    document.getElementById('totalInstallmentAmount').textContent=this.fmt(non.reduce((a,x)=>a+x.pendingAmount,0));
+    document.getElementById('dashboardCapture').textContent=new Date().toLocaleString('en-GB');
+    document.getElementById('loadedRecordCount').textContent=all.length;
+    this.renderMonthly(all);
+    this.renderPurpose(active);
+    await this.renderDepositors(all,members);
+    this.renderRecent(all);
+    if(token===this._perf.renderToken && this.currentSection==='entry')await this.renderHistory(all);
+  };
+
+  app.memberPortalRows=async function(txs){
+    const members=(await this.getAll('members')).filter(u=>u.active!==false);
+    const {months}=await this.getInstallmentPeriod();
+    const byId=new Map(),byName=new Map();
+    for(const u of members){byId.set(String(u.id),u);byName.set(String(u.name||'').trim().toLowerCase(),u);}
+    const monthSet=new Set(months),agg=new Map();
+    for(const t of txs){
+      if(t.status==='VOID'||t.type!=='CASH_IN'||t.entityType!=='MEMBER')continue;
+      const u=(t.memberId&&byId.get(String(t.memberId)))||byName.get(String(t.memberName||t.depositor||'').trim().toLowerCase());
+      if(!u)continue;
+      let x=agg.get(u.id);if(!x){x={count:0,total:0,last:'',months:{}};agg.set(u.id,x);}
+      const amount=Number(t.amount||0);x.count++;x.total+=amount;
+      if(!x.last||t.date>x.last)x.last=t.date||'';
+      const key=String(t.date||'').slice(0,7);if(monthSet.has(key))x.months[key]=(x.months[key]||0)+amount;
+    }
+    const installmentAmount=5000;
+    return members.map(u=>{
+      const x=agg.get(u.id)||{count:0,total:0,last:'',months:{}};
+      const missingMonths=[],missingLabels=[];let pendingAmount=0;
+      for(const m of months){const paid=Number(x.months[m]||0);const pending=Math.max(0,installmentAmount-paid);if(pending>0){pendingAmount+=pending;missingMonths.push(m);missingLabels.push(new Date(m+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'}));}}
+      return {id:u.id,name:String(u.name||'').trim(),count:x.count,total:x.total,pendingAmount,missingMonths,missingLabels,last:x.last};
+    }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+  };
+
+  app.nonDepositors=async function(txs){
+    const all=Array.isArray(txs)?txs:(this._dashboardTransactions||await this.getAll('transactions'));
+    return (await this.memberPortalRows(all)).filter(x=>x.pendingAmount>0);
+  };
+
+  app.renderMonthly=function(txs){
+    const box=document.getElementById('monthlyInstallmentSummary');if(!box)return;
+    const now=new Date(),start=new Date(2026,4,1),end=new Date(now.getFullYear(),now.getMonth(),1),map=new Map();
+    for(let d=new Date(start);d<=end;d.setMonth(d.getMonth()+1))map.set(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'),{date:new Date(d),count:0,amount:0});
+    for(const t of txs){
+      if(t.status==='VOID'||t.type!=='CASH_IN'||t.entityType!=='MEMBER')continue;
+      const x=map.get(String(t.date||'').slice(0,7));if(x){x.count++;x.amount+=Number(t.amount||0);}
+    }
+    box.innerHTML=Array.from(map.values()).map(x=>'<div class="month-box"><span>'+x.date.toLocaleString('en-US',{month:'short',year:'2-digit'})+'</span><strong>'+this.fmt(x.amount)+'</strong><small>'+x.count+' payments</small></div>').join('');
+  };
+
+  const origRenderDepositors=app.renderDepositors.bind(app);
+  app.renderDepositors=async function(txs,precomputed){
+    const rows=precomputed||await this.memberPortalRows(txs);
+    const body=document.getElementById('depositorSummary');
+    body.innerHTML=rows.length?rows.map((x,i)=>'<tr><td>'+(i+1)+'</td><td><strong>'+this.esc(x.name)+'</strong></td><td>'+x.count+'</td><td>'+this.fmt(x.total)+'</td><td>'+this.fmt(x.pendingAmount)+'</td><td>'+this.esc(x.missingLabels.join(', ')||'None')+'</td><td>'+this.esc(x.last||'—')+'</td></tr>').join(''):'<tr><td colspan="7" class="empty">No members found</td></tr>';
+  };
+
+  const origRenderHistory=app.renderHistory.bind(app);
+  app.renderHistory=async function(txs){
+    const all=Array.isArray(txs)?txs:(this._dashboardTransactions||await this.getAll('transactions'));
+    const q=(document.getElementById('historySearch')?.value||'').trim().toLowerCase();
+    const st=document.getElementById('historyStatus')?.value||'';
+    const rows=all.filter(t=>{
+      if(st&&t.status!==st)return false;
+      if(!q)return true;
+      const hay=[t.transactionId,t.type,t.date,t.captureDateTime,t.amount,t.category,t.purpose,t.withdrawalPerson,t.depositor,t.memberName,t.investorName,t.fleetName,t.details,t.status,t.voucherNumber,t.payeePhone,t.costingPoint,t.paymentMode].join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+    const body=document.getElementById('historyBody');
+    if(body)body.innerHTML=rows.length?rows.map(t=>this.rowHtml(t,true)).join(''):'<tr><td colspan="12" class="empty">No transactions</td></tr>';
+  };
+
+  app.showScore=async function(title){
+    const modal=document.getElementById('scoreModal');
+    const body=document.getElementById('scoreModalBody');
+    const search=document.getElementById('scoreModalSearch');
+    if(search)search.value='';
+    const titleEl=document.getElementById('scoreModalTitle');
+    if(titleEl)titleEl.textContent=title;
+    if(modal)modal.classList.add('open');
+    if(body)body.innerHTML='<div class="empty">Loading data…</div>';
+    await new Promise(requestAnimationFrame);
+    const all=this._dashboardTransactions||await this.getAll('transactions');
+    this._dashboardTransactions=all;
+    const active=all.filter(t=>t.status!=='VOID');
+    let rows=[],headers=[];
+    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){
+      const n=await this.nonDepositors(all);
+      titleEl.textContent=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';
+      headers=['#','Name','Pending Amount','Missing Month(s)'];
+      rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingLabels.join(', ')]);
+    }else{
+      let data=[];
+      if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');
+      else if(title==='Total Expense')data=active.filter(t=>t.type==='CASH_OUT');
+      else if(title==="Today's Cash In")data=active.filter(t=>t.type==='CASH_IN'&&t.date===this.today());
+      else if(title==="Today's Cash Out")data=active.filter(t=>t.type==='CASH_OUT'&&t.date===this.today());
+      else if(title==='Current Balance')data=active;
+      else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());
+      else if(title==='Active Entries')data=active;
+      else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');
+      headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];
+      rows=data.map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||t.investorName||t.fleetName,t.details,t.status]);
+    }
+    this.currentScoreRows=[headers].concat(rows);
+    origFilterScore();
+  };
+
+  app.filterScorecardPopup=function(){
+    clearTimeout(this._perf.scoreTimer);
+    this._perf.scoreTimer=setTimeout(()=>origFilterScore(),120);
+  };
+
+  app.updateHealth=this.updateHealth.bind(this);
+
+  app.voidTx=async function(id){
+    if(!this.requireEntry())return;
+    const reason=prompt('Void reason (required):');if(reason===null)return;
+    if(!reason.trim()){alert('Void reason is required.');return;}
+    try{
+      const voidDate=new Date();
+      const {error}=await this.sb.from('transactions').update({status:'VOID',void_reason:reason.trim(),void_date:voidDate.toISOString(),voided_by:this.user.id}).eq('id',id).eq('status','ACTIVE');
+      if(error)throw error;
+      const cached=this._perf.tx||this._dashboardTransactions||[];
+      const hit=cached.find(t=>String(t.id)===String(id));
+      if(hit){hit.status='VOID';hit.voidReason=reason.trim();hit.voidDate=voidDate.toLocaleString('en-GB');}
+      this._perf.tx=cached;this._dashboardTransactions=cached;this._perf.txAt=Date.now();
+      await this.render(cached);await this.updateHealth(cached);
+    }catch(e){alert('Void failed: '+e.message);}
+  };
+
+  app.refreshLiveData=async function(manual){
+    if(this._perf.refreshInFlight)return;
+    this._perf.refreshInFlight=true;
+    try{
+      if(manual)this.invalidatePerf();
+      const txs=await this.getAll('transactions',{force:!!manual});
+      this._dashboardTransactions=txs;
+      if(this.currentSection==='dashboard')await this.render(txs);
+      else if(this.currentSection==='investor')await this.renderInvestors(txs);
+      else if(this.currentSection==='fleets')await this.renderFleets(txs);
+      else if(this.currentSection==='entry')await this.renderHistory(txs);
+      await this.updateHealth(txs);
+      if(manual){
+        const btn=document.getElementById('refreshBtn');
+        if(btn){const old=btn.textContent;btn.textContent='✅ Updated';setTimeout(()=>btn.textContent=old,1200);}
+      }
+    }catch(e){console.error('[MCFT live refresh]',e);}
+    finally{this._perf.refreshInFlight=false;}
+  };
+
+  app.startAutoRefresh=function(){
+    if(this._refreshTimer)clearInterval(this._refreshTimer);
+    this._refreshTimer=setInterval(()=>{
+      if(!document.hidden&&!this._perf.savingCashIn&&!this._perf.savingCashOut)this.refreshLiveData(false);
+    },15000);
+    if(!this._perf.visibilityBound){
+      this._perf.visibilityBound=true;
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)this.refreshLiveData(false);});
+    }
+  };
+
+  app.showSection=function(id){
+    if(id==='entry'&&!this.canWrite){this.openLogin();return;}
+    this.currentSection=id;
+    document.querySelectorAll('.section').forEach(x=>x.classList.remove('active'));
+    document.getElementById(id)?.classList.add('active');
+    document.getElementById('navDashboard')?.classList.toggle('active',id==='dashboard');
+    document.getElementById('navEntry')?.classList.toggle('active',id==='entry');
+    document.getElementById('navInvestor')?.classList.toggle('active',id==='investor');
+    document.getElementById('navFleets')?.classList.toggle('active',id==='fleets');
+    const txs=this._dashboardTransactions;
+    if(id==='dashboard')this.render(txs);
+    else if(id==='investor')this.renderInvestors(txs);
+    else if(id==='fleets')this.renderFleets(txs);
+    else if(id==='entry')this.renderHistory(txs);
+  };
+
+  const origLoadProfile=app.loadProfile.bind(app);
+  app.loadProfile=async function(){
+    const out=await origLoadProfile();
+    this.invalidatePerf();
+    this.invalidateCustom();
+    return out;
+  };
+  const origLogout=app.logout.bind(app);
+  app.logout=async function(){
+    const out=await origLogout();
+    this.invalidatePerf();this.invalidateCustom();
+    return out;
+  };
+  const origAdd=app.add.bind(app);
+  app.add=async function(store,obj){
+    const id=await origAdd(store,obj);
+    if(store==='members'||store==='investors'||store==='fleets'){
+      this._perf.masters[store]=null;
+    }else if(store==='transactions'){
+      this.invalidatePerf();
+    }
+    return id;
+  };
+  if(typeof app.addCategory==='function'){
+    const fn=app.addCategory.bind(app);
+    app.addCategory=async function(){const out=await fn(...arguments);this.invalidateCustom();return out;};
+  }
+  if(typeof app.addPurpose==='function'){
+    const fn=app.addPurpose.bind(app);
+    app.addPurpose=async function(){const out=await fn(...arguments);this.invalidateCustom();return out;};
+  }
+})();
+</script>
 </body>
 </html>
