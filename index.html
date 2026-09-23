@@ -96,10 +96,10 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
   <div class="header-row">
     <div class="brand">🏢 MCFT Enterprise <span class="entity-badge">ONLINE</span></div>
     <div style="font-size:11px;opacity:.9;margin-right:auto">● <span id="dbHealth">Database: checking…</span> · <span id="backupHealth">Backup: checking…</span> · <span id="authUserBadge" class="auth-badge">Viewer</span></div><div class="header-actions">
-      <button id="btnBackup" class="btn btn-secondary" onclick="app.backup()">📥 Backup</button>
-      <button id="btnRestore" class="btn btn-secondary" onclick="app.restoreUI()">📤 Restore</button>
-      <button id="btnNewEntry" class="btn btn-primary" onclick="app.showSection('entry');app.scrollToEntry()">➕ New Entry</button>
-      <button id="btnNewUser" class="btn btn-secondary" onclick="app.openUserModal()">👤 New User</button>
+      <button id="btnBackup" class="btn btn-secondary auth-hidden" onclick="app.backup()">📥 Backup</button>
+      <button id="btnRestore" class="btn btn-secondary auth-hidden" onclick="app.restoreUI()">📤 Restore</button>
+      <button id="btnNewEntry" class="btn btn-primary auth-hidden" onclick="app.showSection('entry');app.scrollToEntry()">➕ New Entry</button>
+      <button id="btnNewUser" class="btn btn-secondary auth-hidden" onclick="app.openUserModal()">👤 New User</button>
       <button class="btn btn-success" onclick="app.exportSelectedSectionExcel()">📊 Export Excel</button><button id="refreshBtn" class="btn btn-secondary" onclick="app.refreshLiveData(true)">🔄 Refresh</button><button id="loginBtn" class="btn btn-secondary" onclick="app.openLogin()">🔐 Login</button><button id="logoutBtn" class="btn btn-secondary auth-hidden" onclick="app.logout()">🚪 Logout</button>
     </div>
   </div>
@@ -445,9 +445,43 @@ const app = {
     const sb=this.sb;
     if(!sb) throw new Error('Supabase is not initialized.');
     if(store==='transactions'){
-      const {data,error}=await sb.from('public_transactions').select('*').order('transaction_date',{ascending:false}).order('capture_date',{ascending:false});
+      const txColumns=[
+        'id','transaction_id','transaction_date','capture_date','flow','entity_type',
+        'member_id','investor_id','fleet_id','category','purpose','amount','details',
+        'status','void_date','void_reason','withdrawal_person','payee_phone',
+        'costing_point','payment_mode','approval_status','voucher_number'
+      ].join(',');
+
+      const {data,error}=await sb.from('transactions')
+        .select(txColumns)
+        .order('transaction_date',{ascending:false})
+        .order('capture_date',{ascending:false});
+
       if(error) throw error;
-      return (data||[]).map(t=>this.fromDbTransaction(t));
+
+      const [members,investors,fleets]=await Promise.all([
+        this.getAll('members'),
+        this.getAll('investors'),
+        this.getAll('fleets')
+      ]);
+
+      const memberMap=new Map((members||[]).map(x=>[x.id,x]));
+      const investorMap=new Map((investors||[]).map(x=>[x.id,x]));
+      const fleetMap=new Map((fleets||[]).map(x=>[x.id,x]));
+
+      return (data||[]).map(t=>{
+        const m=memberMap.get(t.member_id);
+        const i=investorMap.get(t.investor_id);
+        const f=fleetMap.get(t.fleet_id);
+
+        return this.fromDbTransaction({
+          ...t,
+          member_name:m?.name||'',
+          investor_name:i?.name||'',
+          vehicle_name:f?.name||'',
+          vehicle_number:f?.vehicleNumber||'',
+        });
+      });
     }
     if(store==='members'){
       const selectCols=this.user?'*':'id,name,active';
