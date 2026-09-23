@@ -1138,7 +1138,7 @@ const app = {
   },
   async showScore(title){
     const all=await this.getAll('transactions'),active=all.filter(t=>t.status!=='VOID');let rows=[],headers=[],heading=title;
-    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingLabels.join(', ')]);}
+    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingMonths.map(m=>this.formatMissingMonth(m)).join(', ')]);}
     else{let data=[];if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');else if(title==='Total Expense')data=active.filter(t=>t.type==='CASH_OUT');else if(title==="Today's Cash In")data=active.filter(t=>t.type==='CASH_IN'&&t.date===this.today());else if(title==="Today's Cash Out")data=active.filter(t=>t.type==='CASH_OUT'&&t.date===this.today());else if(title==='Current Balance')data=active;else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());else if(title==='Active Entries')data=active;else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];rows=data.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'Imported',Number(String(t.amount??0).replace(/[^0-9.-]/g,'')),t.category,t.purpose,t.withdrawalPerson,t.depositor,t.details,t.status]);}
     this.currentScoreRows=[headers,...rows];document.getElementById('scoreModalSearch').value='';document.getElementById('scoreModalTitle').textContent=heading;this.filterScorecardPopup();document.getElementById('scoreModal').classList.add('open');
   },
@@ -1821,7 +1821,7 @@ window.numericExcelAmount = function(v){
       const n=await this.nonDepositors(all);
       titleEl.textContent=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';
       headers=['#','Name','Pending Amount','Missing Month(s)'];
-      rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingLabels.join(', ')]);
+      rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingMonths.map(m=>this.formatMissingMonth(m)).join(', ')]);
     }else{
       let data=[];
       if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');
