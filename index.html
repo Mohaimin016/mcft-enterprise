@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-5">
+<meta name="mcft-build" content="20260923-7">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -1070,17 +1070,15 @@ const app = {
 
       const deposits=memberTxs.length;
       const total=memberTxs.reduce((s,t)=>s+Number(t.amount||0),0);
+      const requiredTotal=months.length*installmentAmount;
+      const pendingAmount=Math.max(0,requiredTotal-total);
 
-      const monthPaid=Object.fromEntries(months.map(m=>[
-        m,
-        memberTxs
-          .filter(t=>String(t.date||'').startsWith(m))
-          .reduce((s,t)=>s+Number(t.amount||0),0)
-      ]));
-
-      const pendingByMonth=months
-        .map(m=>({month:m,paid:Number(monthPaid[m]||0),pending:Math.max(0,installmentAmount-Number(monthPaid[m]||0))}))
-        .filter(x=>x.pending>0);
+      const paidMonths=new Set();
+      for(const t of memberTxs){
+        const m=String(t.date||'').slice(0,7);
+        if(months.includes(m)) paidMonths.add(m);
+      }
+      const missingMonths=months.filter(m=>!paidMonths.has(m));
 
       const last=[...memberTxs]
         .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''))[0]?.date||'';
@@ -1090,9 +1088,10 @@ const app = {
         name,
         count:deposits,
         total,
-        pendingAmount:pendingByMonth.reduce((s,x)=>s+x.pending,0),
-        missingMonths:pendingByMonth.map(x=>x.month),
-        missingLabels:pendingByMonth.map(x=>this.formatMissingMonth(x.month)),
+        requiredTotal,
+        pendingAmount,
+        missingMonths,
+        missingLabels:missingMonths.map(m=>this.formatMissingMonth(m)),
         last
       };
     }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
