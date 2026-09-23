@@ -450,18 +450,21 @@ const app = {
       return (data||[]).map(t=>this.fromDbTransaction(t));
     }
     if(store==='members'){
-      let q=sb.from('members').select('*').order('name');
+      const selectCols=this.user?'*':'id,name,active';
+      let q=sb.from('members').select(selectCols).order('name');
       if(!this.user) q=q.eq('active',true);
       const {data,error}=await q; if(error) throw error; return data||[];
     }
     if(store==='investors'){
-      let q=sb.from('investors').select('*').order('name');
+      const selectCols=this.user?'*':'id,name,active';
+      let q=sb.from('investors').select(selectCols).order('name');
       if(!this.user) q=q.eq('active',true);
       const {data,error}=await q; if(error) throw error;
       return (data||[]).map(x=>({id:x.id,name:x.name,phone:x.phone||'',details:x.details||'',role:'Investor',active:x.active}));
     }
     if(store==='fleets'){
-      let q=sb.from('fleets').select('*').order('vehicle_name');
+      const selectCols=this.user?'*':'id,vehicle_name,vehicle_number,active';
+      let q=sb.from('fleets').select(selectCols).order('vehicle_name');
       if(!this.user) q=q.eq('active',true);
       const {data,error}=await q; if(error) throw error;
       return (data||[]).map(x=>({id:x.id,name:x.vehicle_name,vehicleName:x.vehicle_name,vehicleNumber:x.vehicle_number||'',driverName:x.driver_name||'',currentValue:Number(x.current_value||0),details:x.details||'',active:x.active,createdAt:x.created_at}));
