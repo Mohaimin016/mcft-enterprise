@@ -414,9 +414,21 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
   <div class="modal-content" id="restoreModalContent">
     <button class="modal-maximize" title="Maximize / Restore" onclick="app.toggleMaximize('restoreModal')">⛶</button>
     <button class="modal-close" title="Close" onclick="app.closeModal('restoreModal')">×</button>
-    <div class="modal-title">Restore Backup</div>
-    <input type="file" id="restoreFile" accept=".json">
-    <div class="modal-footer"><button class="btn btn-secondary" onclick="app.closeModal('restoreModal')">Cancel</button><button class="btn btn-primary" onclick="app.restore()">Restore</button></div>
+    <div class="modal-title">📥 Restore Data from Excel</div>
+    <div class="help">Upload an Excel file exported from MCFT Enterprise. Existing records are never overwritten or deleted. Only valid, non-duplicate transaction rows are restored.</div>
+    <div class="form-group" style="margin-top:14px">
+      <label>Excel File (.xlsx / .xls)</label>
+      <input type="file" id="excelRestoreFile" accept=".xlsx,.xls" onchange="app.previewExcelRestore(this.files[0])">
+    </div>
+    <div id="excelRestoreStatus" class="help" style="margin-top:10px"></div>
+    <div id="excelRestorePreview" style="margin-top:12px"></div>
+    <div class="help" style="margin-top:12px;padding:10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px">
+      ⚠️ Safety: restore adds records only. It does not overwrite existing transactions. Missing Member/Investor/Fleet references are rejected rather than auto-created.
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="app.closeModal('restoreModal')">Cancel</button>
+      <button id="excelRestoreBtn" class="btn btn-primary" onclick="app.restoreExcel()" disabled>Restore Valid Records</button>
+    </div>
   </div>
 </div>
 
@@ -432,6 +444,7 @@ const app = {
   filterTo:null,
   currentScoreRows:[],
   currentSection:'dashboard',
+  _excelRestore:{file:null,rows:[],validRows:[],errors:[],duplicates:[],sheet:""},
 
   async init(){
     try{
@@ -1286,11 +1299,198 @@ const app = {
       const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}); this.downloadBlob(blob,`MCFT_Backup_${this.fileDate()}.json`); await this.saveSetting('lastBackupAt',new Date().toISOString()); await this.updateHealth();
     }catch(e){alert('Backup failed: '+e.message);}
   },
-  restoreUI(){document.getElementById('restoreModal').classList.add('open');},
-  async restore(){
+  restoreUI(){
     if(this.role!=='admin'){alert('Administrator access is required for restore.');return;}
-    alert('Online restore is disabled in this first Supabase-connected build. Please keep the JSON backup. We will add a controlled admin restore/import function after the live connection is verified.');
-  }
+    this._excelRestore={file:null,rows:[],validRows:[],errors:[],duplicates:[],sheet:""};
+    const file=document.getElementById('excelRestoreFile');
+    const status=document.getElementById('excelRestoreStatus');
+    const preview=document.getElementById('excelRestorePreview');
+    const btn=document.getElementById('excelRestoreBtn');
+    if(file)file.value='';
+    if(status)status.textContent='Select an Excel export to validate it before restoring.';
+    if(preview)preview.innerHTML='';
+    if(btn)btn.disabled=true;
+    document.getElementById('restoreModal').classList.add('open');
+  },
+  excelRestoreSetStatus(msg,isError=false){
+    const el=document.getElementById('excelRestoreStatus');
+    if(el){el.textContent=msg;el.style.color=isError?'#b42318':'';}
+  },
+  excelRestoreNormalizeDate(value){
+    if(value===null||value===undefined||value==='')return '';
+    if(value instanceof Date&&!isNaN(value))return value.toISOString().slice(0,10);
+    if(typeof value==='number'&&window.XLSX&&XLSX.SSF){
+      try{
+        const d=XLSX.SSF.parse_date_code(value);
+        if(d&&d.y&&d.m&&d.d)return d.y+'-'+String(d.m).padStart(2,'0')+'-'+String(d.d).padStart(2,'0');
+      }catch(e){}
+    }
+    const s=String(value).trim();
+    if(!s)return '';
+    let m=s.match(/^(\\d{4})[-\\/](\\d{1,2})[-\\/](\\d{1,2})/);
+    if(m)return m[1]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[3]).padStart(2,'0');
+    m=s.match(/^(\\d{1,2})[-\\/](\\d{1,2})[-\\/](\\d{4})/);
+    if(m)return m[3]+'-'+String(m[2]).padStart(2,'0')+'-'+String(m[1]).padStart(2,'0');
+    const d=new Date(s);
+    return isNaN(d)?'':d.toISOString().slice(0,10);
+  },
+  excelRestoreValue(row,names){
+    const keys=Object.keys(row||{});
+    for(const name of names){
+      const k=keys.find(x=>String(x).trim().toLowerCase()===String(name).trim().toLowerCase());
+      if(k!==undefined&&row[k]!==undefined&&row[k]!==null&&String(row[k]).trim()!=='')return row[k];
+    }
+    return '';
+  },
+  async previewExcelRestore(file){
+    if(this.role!=='admin'){alert('Administrator access is required for restore.');return;}
+    const btn=document.getElementById('excelRestoreBtn');if(btn)btn.disabled=true;
+    this._excelRestore={file:null,rows:[],validRows:[],errors:[],duplicates:[],sheet:""};
+    if(!window.XLSX){this.excelRestoreSetStatus('Excel reader library failed to load. Please refresh the page and try again.',true);return;}
+    if(!file){this.excelRestoreSetStatus('Please select an Excel .xlsx or .xls file.',true);return;}
+    try{
+      this.excelRestoreSetStatus('Reading and validating Excel file…');
+      const buffer=await file.arrayBuffer();
+      const wb=XLSX.read(buffer,{type:'array',cellDates:true});
+      const sheetName=wb.SheetNames.find(s=>/transaction/i.test(s))||wb.SheetNames[0];
+      if(!sheetName)throw new Error('No worksheet found.');
+      const ws=wb.Sheets[sheetName];
+      const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+      let headerIndex=-1;
+      for(let i=0;i<Math.min(matrix.length,20);i++){
+        const line=matrix[i].map(x=>String(x??'').trim().toLowerCase());
+        if(line.some(x=>x==='transaction id'||x==='transactionid'||x==='transaction_id')&&line.some(x=>x==='transaction date'||x==='date'||x==='transaction_date')){headerIndex=i;break;}
+      }
+      if(headerIndex<0)throw new Error('Could not find a Transaction ID + Transaction Date header row in the first 20 rows.');
+      const headers=matrix[headerIndex].map(x=>String(x??'').trim());
+      const rows=matrix.slice(headerIndex+1).map(a=>{const o={};headers.forEach((h,i)=>{if(h)o[h]=a[i]??'';});return o;}).filter(r=>Object.values(r).some(v=>String(v??'').trim()!==''));
+      if(!rows.length)throw new Error('No transaction rows found.');
+      const [members,investors,fleets,existing]=await Promise.all([
+        this.getAll('members',{force:true}),this.getAll('investors',{force:true}),this.getAll('fleets',{force:true}),this.getAll('transactions',{force:true})
+      ]);
+      const byName=(arr)=>new Map((arr||[]).map(x=>[String(x.name||'').trim().toLowerCase(),x]));
+      const memberMap=byName(members),investorMap=byName(investors),fleetMap=byName(fleets);
+      const existingIds=new Set((existing||[]).map(x=>String(x.transactionId||'').trim().toLowerCase()).filter(Boolean));
+      const seen=new Set(),validRows=[],errors=[],duplicates=[];
+      rows.forEach((r,idx)=>{
+        const excelRow=headerIndex+idx+2;
+        const transactionId=String(this.excelRestoreValue(r,['Transaction ID','transactionId','TransactionID','transaction_id'])||'').trim();
+        const date=this.excelRestoreNormalizeDate(this.excelRestoreValue(r,['Transaction Date','Date','transaction_date']));
+        const amount=Number(String(this.excelRestoreValue(r,['Amount','amount'])||'').replace(/[^0-9.-]/g,''));
+        const rawType=String(this.excelRestoreValue(r,['Type','Transaction Type','type','flow'])||'').trim().toUpperCase();
+        const type=rawType==='CASH_IN'||rawType==='CASH IN'||rawType==='INCOME'?'CASH_IN':rawType==='CASH_OUT'||rawType==='CASH OUT'||rawType==='EXPENSE'||rawType==='EXPENDITURE'?'CASH_OUT':'';
+        const category=String(this.excelRestoreValue(r,['Category','Flow Category','Cash In Category','Cash Out Category','category'])||'').trim();
+        const purpose=String(this.excelRestoreValue(r,['Purpose','purpose'])||'').trim();
+        const flow=String(this.excelRestoreValue(r,['Flow Category','Entity Type','Cash In Type','Cash Out Type','flowCategory','entityType'])||'').trim().toUpperCase();
+        const memberName=String(this.excelRestoreValue(r,['Member','Member Name','memberName'])||'').trim();
+        const investorName=String(this.excelRestoreValue(r,['Investor','Investor Name','investorName'])||'').trim();
+        const fleetName=String(this.excelRestoreValue(r,['Vehicle / Fleet','Fleet','Fleet Name','Vehicle Name','fleetName'])||'').trim();
+        const depositor=String(this.excelRestoreValue(r,['Depositor','depositor'])||'').trim();
+        const withdrawalPerson=String(this.excelRestoreValue(r,['Withdrawal Person','withdrawalPerson'])||'').trim();
+        const details=String(this.excelRestoreValue(r,['Details','details'])||'').trim();
+        const statusRaw=String(this.excelRestoreValue(r,['Status','status'])||'ACTIVE').trim().toUpperCase();
+        const status=statusRaw==='VOID'?'VOID':'ACTIVE';
+        const payeePhone=String(this.excelRestoreValue(r,['Payee Phone','payeePhone'])||'').trim();
+        const costingPoint=String(this.excelRestoreValue(r,['Costing Point','costingPoint'])||'').trim();
+        const paymentMode=String(this.excelRestoreValue(r,['Payment Mode','paymentMode'])||'').trim();
+        const approvalStatus=String(this.excelRestoreValue(r,['Approval Status','approvalStatus'])||'').trim();
+        const voucherNumber=String(this.excelRestoreValue(r,['Voucher Number','voucherNumber'])||'').trim();
+        const voidReason=String(this.excelRestoreValue(r,['Void Reason','voidReason'])||'').trim();
+        const voidDate=this.excelRestoreNormalizeDate(this.excelRestoreValue(r,['Void Date','voidDate']));
+        const captureDate=this.excelRestoreNormalizeDate(this.excelRestoreValue(r,['Capture Date','captureDate']));
+        let entityType=flow;
+        if(entityType==='MEMBER NAME')entityType='MEMBER';
+        if(entityType==='INVESTOR NAME')entityType='INVESTOR';
+        if(entityType==='FLEET NAME')entityType='FLEET';
+        if(!['MEMBER','INVESTOR','FLEET','OTHER','EXPENSE'].includes(entityType)){
+          if(memberName||depositor)entityType='MEMBER';
+          else if(investorName)entityType='INVESTOR';
+          else if(fleetName)entityType='FLEET';
+          else entityType='OTHER';
+        }
+        const member=memberMap.get((memberName||depositor).toLowerCase());
+        const investor=investorMap.get(investorName.toLowerCase());
+        const fleet=fleetMap.get(fleetName.toLowerCase());
+        const rowErrors=[];
+        if(!transactionId)rowErrors.push('Missing Transaction ID');
+        if(!date)rowErrors.push('Invalid/missing Transaction Date');
+        if(!type)rowErrors.push('Invalid Type');
+        if(!category)rowErrors.push('Missing Category');
+        if(!purpose)rowErrors.push('Missing Purpose');
+        if(!Number.isFinite(amount)||amount<=0)rowErrors.push('Invalid Amount');
+        if(existingIds.has(transactionId.toLowerCase())||seen.has(transactionId.toLowerCase()))duplicates.push({row:excelRow,id:transactionId,reason:existingIds.has(transactionId.toLowerCase())?'Already exists in database':'Duplicate in Excel'});
+        if(type==='CASH_IN'&&entityType==='MEMBER'&&!member)rowErrors.push('Member not found');
+        if(type==='CASH_IN'&&entityType==='INVESTOR'&&!investor)rowErrors.push('Investor not found');
+        if(type==='CASH_IN'&&entityType==='FLEET'&&!fleet)rowErrors.push('Fleet not found');
+        if(type==='CASH_OUT'&&entityType==='INVESTOR'&&!investor)rowErrors.push('Investor not found');
+        if(type==='CASH_OUT'&&entityType==='FLEET'&&!fleet)rowErrors.push('Fleet not found');
+        if(type==='CASH_OUT'&&entityType==='MEMBER'&&!member)rowErrors.push('Member not found');
+        seen.add(transactionId.toLowerCase());
+        if(rowErrors.length)errors.push({row:excelRow,id:transactionId,errors:rowErrors});
+        else if(!existingIds.has(transactionId.toLowerCase())&&validRows.every(x=>String(x.transaction_id).toLowerCase()!==transactionId.toLowerCase())){
+          validRows.push({
+            transaction_id:transactionId,transaction_date:date,capture_date:captureDate?new Date(captureDate+'T12:00:00Z').toISOString():new Date().toISOString(),
+            flow:type,entity_type:entityType==='EXPENSE'?'OTHER':entityType,member_id:member?.id||null,investor_id:investor?.id||null,fleet_id:fleet?.id||null,
+            category,purpose,amount,details,status,created_by:this.user.id,withdrawal_person:withdrawalPerson,payee_phone:payeePhone,costing_point:costingPoint,
+            payment_mode:paymentMode,approval_status:approvalStatus,voucher_number:voucherNumber,void_reason:status==='VOID'?voidReason:null,void_date:status==='VOID'&&voidDate?new Date(voidDate+'T12:00:00Z').toISOString():null
+          });
+        }
+      });
+      this._excelRestore={file,rows,validRows,errors,duplicates,sheet:sheetName};
+      this.renderExcelRestorePreview();
+      if(btn)btn.disabled=!validRows.length;
+      this.excelRestoreSetStatus('Validation complete. '+validRows.length+' valid rows ready to restore.');
+    }catch(e){
+      console.error('[MCFT Excel restore]',e);
+      this.excelRestoreSetStatus('Restore validation failed: '+(e?.message||String(e)),true);
+    }
+  },
+  renderExcelRestorePreview(){
+    const p=document.getElementById('excelRestorePreview');if(!p)return;
+    const x=this._excelRestore;
+    const sample=[...x.errors.slice(0,10),...x.duplicates.slice(0,10)];
+    p.innerHTML='<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px">'+
+      '<div class="month-box"><small>Rows</small><strong>'+x.rows.length+'</strong></div>'+
+      '<div class="month-box"><small>Valid</small><strong>'+x.validRows.length+'</strong></div>'+
+      '<div class="month-box"><small>Errors</small><strong>'+x.errors.length+'</strong></div>'+
+      '<div class="month-box"><small>Duplicates</small><strong>'+x.duplicates.length+'</strong></div></div>'+
+      (sample.length?'<div style="margin-top:12px"><strong>Validation issues (first 20)</strong><div class="table-container"><table style="min-width:650px"><thead><tr><th>Excel Row</th><th>Transaction ID</th><th>Issue</th></tr></thead><tbody>'+
+      sample.map(e=>'<tr><td>'+e.row+'</td><td>'+this.esc(e.id||'')+'</td><td>'+this.esc(e.errors?e.errors.join('; '):e.reason)+'</td></tr>').join('')+
+      '</tbody></table></div></div>':'<div class="help" style="margin-top:12px">No validation errors or duplicates detected.</div>');
+  },
+  async restoreExcel(){
+    if(this.role!=='admin'){alert('Administrator access is required for restore.');return;}
+    const x=this._excelRestore;
+    if(!x||!x.validRows.length){alert('No valid rows are ready to restore.');return;}
+    if(!confirm('Restore '+x.validRows.length+' valid transaction records into Supabase? Existing records will not be overwritten.'))return;
+    const btn=document.getElementById('excelRestoreBtn');if(btn){btn.disabled=true;btn.textContent='Restoring…';}
+    try{
+      let inserted=0,failed=0;
+      for(let i=0;i<x.validRows.length;i+=200){
+        const chunk=x.validRows.slice(i,i+200);
+        const {error}=await this.sb.from('transactions').insert(chunk);
+        if(error){failed+=chunk.length;console.error('[MCFT Excel restore chunk]',error);}
+        else inserted+=chunk.length;
+      }
+      this.invalidatePerf();
+      const txs=await this.getAll('transactions',{force:true});
+      this._dashboardTransactions=txs;
+      await this.render(txs);
+      await this.updateHealth(txs);
+      if(failed){
+        alert('Restore finished. Inserted: '+inserted+' | Failed: '+failed+'\nCheck the browser console for failed chunk details.');
+      }else{
+        alert('Restore completed successfully. '+inserted+' transaction records added.');
+      }
+      this.closeModal('restoreModal');
+    }catch(e){
+      console.error('[MCFT Excel restore]',e);
+      alert('Restore failed: '+(e?.message||String(e)));
+    }finally{
+      if(btn){btn.disabled=false;btn.textContent='Restore Valid Records';}
+    }
+  },
+  async restore(){ return this.restoreExcel(); }
 };
 
 document.addEventListener('DOMContentLoaded',async()=>{
