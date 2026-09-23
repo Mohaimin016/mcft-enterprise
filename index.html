@@ -944,6 +944,7 @@ const app = {
     const row={transaction_id:tx.transactionId,transaction_date:tx.date,capture_date:new Date().toISOString(),flow:tx.type,entity_type:tx.entityType,member_id,investor_id,fleet_id,category:tx.category,purpose:tx.purpose,amount:Number(tx.amount),details:tx.details||'',status:'ACTIVE',created_by:this.user.id,withdrawal_person:tx.withdrawalPerson||'',payee_phone:tx.payeePhone||'',costing_point:tx.costingPoint||'',payment_mode:tx.paymentMode||'',approval_status:tx.approvalStatus||'',voucher_number:tx.voucherNumber||''};
     const {error}=await this.sb.from('transactions').insert(row); if(error)throw error;
   },
+  formatMissingMonth(m){const d=new Date(String(m)+'-01T00:00:00');return d.toLocaleString('en-US',{month:'short'})+"'"+String(d.getFullYear()).slice(-2);},
   fmt(n){return '৳'+Number(n||0).toLocaleString('en-BD',{minimumFractionDigits:0,maximumFractionDigits:2});},
   esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));},
   today(){return new Date().toISOString().slice(0,10);},
@@ -1072,7 +1073,7 @@ const app = {
         total,
         pendingAmount:pendingByMonth.reduce((s,x)=>s+x.pending,0),
         missingMonths:pendingByMonth.map(x=>x.month),
-        missingLabels:pendingByMonth.map(x=>new Date(x.month+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'})),
+        missingLabels:pendingByMonth.map(x=>this.formatMissingMonth(x.month)),
         last
       };
     }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
@@ -1136,7 +1137,7 @@ const app = {
   },
   async showScore(title){
     const all=await this.getAll('transactions'),active=all.filter(t=>t.status!=='VOID');let rows=[],headers=[],heading=title;
-    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingMonths.join(', ')]);}
+    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingLabels.join(', ')]);}
     else{let data=[];if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');else if(title==='Total Expense')data=active.filter(t=>t.type==='CASH_OUT');else if(title==="Today's Cash In")data=active.filter(t=>t.type==='CASH_IN'&&t.date===this.today());else if(title==="Today's Cash Out")data=active.filter(t=>t.type==='CASH_OUT'&&t.date===this.today());else if(title==='Current Balance')data=active;else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());else if(title==='Active Entries')data=active;else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];rows=data.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'Imported',Number(String(t.amount??0).replace(/[^0-9.-]/g,'')),t.category,t.purpose,t.withdrawalPerson,t.depositor,t.details,t.status]);}
     this.currentScoreRows=[headers,...rows];document.getElementById('scoreModalSearch').value='';document.getElementById('scoreModalTitle').textContent=heading;this.filterScorecardPopup();document.getElementById('scoreModal').classList.add('open');
   },
@@ -1758,7 +1759,7 @@ window.numericExcelAmount = function(v){
     return members.map(u=>{
       const x=agg.get(u.id)||{count:0,total:0,last:'',months:{}};
       const missingMonths=[],missingLabels=[];let pendingAmount=0;
-      for(const m of months){const paid=Number(x.months[m]||0);const pending=Math.max(0,installmentAmount-paid);if(pending>0){pendingAmount+=pending;missingMonths.push(m);missingLabels.push(new Date(m+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'}));}}
+      for(const m of months){const paid=Number(x.months[m]||0);const pending=Math.max(0,installmentAmount-paid);if(pending>0){pendingAmount+=pending;missingMonths.push(m);missingLabels.push(this.formatMissingMonth(m));}}
       return {id:u.id,name:String(u.name||'').trim(),count:x.count,total:x.total,pendingAmount,missingMonths,missingLabels,last:x.last};
     }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
   };
