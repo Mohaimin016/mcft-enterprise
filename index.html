@@ -1243,46 +1243,34 @@ const app = {
       alert('Excel XLSX library did not load. Please check your internet connection and try again.');
       return;
     }
-
     try{
       const wb=XLSX.utils.book_new();
-
-      (sheets||[]).forEach(([name,rows],index)=>{
-        const aoa=(rows||[]).map(row=>(row||[]).map(v=>{
-          if(typeof v==='number' && Number.isFinite(v)) return v;
-          if(v===null || v===undefined) return '';
+      const safeSheets=Array.isArray(sheets)?sheets:[];
+      if(!safeSheets.length) throw new Error('No data available for Excel export.');
+      safeSheets.forEach(([name,rows],index)=>{
+        const aoa=(Array.isArray(rows)?rows:[]).map(row=>(Array.isArray(row)?row:[]).map(v=>{
+          if(v===null||v===undefined)return '';
+          if(typeof v==='number' && Number.isFinite(v))return v;
           return String(v);
         }));
-
+        if(!aoa.length) aoa.push(['No data']);
         const ws=XLSX.utils.aoa_to_sheet(aoa);
-        const colCount=Math.max(...aoa.map(r=>r.length),0);
-        const widths=[];
-        for(let col=0;col<colCount;col++){
+        const colCount=Math.max(1,...aoa.map(r=>r.length));
+        ws['!cols']=Array.from({length:colCount},(_,col)=>{
           let max=10;
-          for(let row=0;row<Math.min(aoa.length,300);row++){
-            const v=aoa[row]?.[col];
-            max=Math.max(max,String(v??'').length);
-          }
-          widths.push({wch:Math.min(Math.max(max+2,10),35)});
-        }
-        ws['!cols']=widths;
-        if(aoa.length>1) ws['!freeze']={xSplit:0,ySplit:1};
-
-        let sheetName=String(name||('Sheet '+(index+1)))
-          .replace(/[\\/\\?\\*\\[\\]:]/g,' ')
-          .trim()
-          .slice(0,31) || ('Sheet '+(index+1));
-        const baseSheetName=sheetName;
-        let n=2;
-        while(wb.SheetNames.includes(sheetName)){
-          const suffix=' '+n++;
-          sheetName=baseSheetName.slice(0,31-suffix.length)+suffix;
-        }
+          for(let row=0;row<Math.min(aoa.length,500);row++) max=Math.max(max,String(aoa[row]?.[col]??'').length);
+          return {wch:Math.min(Math.max(max+2,10),40)};
+        });
+        if(aoa.length>1)ws['!freeze']={xSplit:0,ySplit:1};
+        let sheetName=String(name||('Sheet '+(index+1))).replace(/[\\\\\/?*\[\]:]/g,' ').trim().slice(0,31)||('Sheet '+(index+1));
+        const baseSheetName=sheetName;let n=2;
+        while(wb.SheetNames.includes(sheetName)){const suffix=' '+n++;sheetName=baseSheetName.slice(0,31-suffix.length)+suffix;}
         XLSX.utils.book_append_sheet(wb,ws,sheetName);
       });
-
-      const filename=base+'_'+this.fileDate()+'.xlsx';
-      XLSX.writeFile(wb,filename,{bookType:'xlsx',compression:true});
+      const filename=String(base||'MCFT_Export').replace(/[\\/:*?"<>|]/g,'_')+'_'+this.fileDate()+'.xlsx';
+      const out=XLSX.write(wb,{bookType:'xlsx',type:'array',compression:false});
+      const blob=new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      this.downloadBlob(blob,filename);
     }catch(e){
       console.error('[MCFT XLSX export]',e);
       alert('Excel export failed: '+(e?.message||String(e)));
