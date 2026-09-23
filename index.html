@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-13">
+<meta name="mcft-build" content="20260923-14">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -518,7 +518,7 @@ const app = {
         const im=new Map((investors||[]).map(x=>[String(x.id),x]));
         const fm=new Map((fleets||[]).map(x=>[String(x.id),x]));
         return (data||[]).map(t=>{
-          const m=mm.get(String(t.member_id||"")),i=im.get(String(t.investor_id||"")),f=fm.get(String(t.fleet_id||""));
+          const m=mm.get(String(t.member_id||'')),i=im.get(String(t.investor_id||'')),f=fm.get(String(t.fleet_id||''));
           return this.fromDbTransaction({...t,member_name:m?.name||'',investor_name:i?.name||'',vehicle_name:f?.vehicle_name||'',vehicle_number:f?.vehicle_number||''});
         });
       }
@@ -538,10 +538,10 @@ const app = {
         this.getAll('members'),this.getAll('investors'),this.getAll('fleets')
       ]);
       const mm=new Map((members||[]).map(x=>[String(x.id),x]));
-      const im=new Map((investors||[]).map(x=>[String(x.id),x]));
-      const fm=new Map((fleets||[]).map(x=>[String(x.id),x]));
-      return (data||[]).map(t=>{
-        const m=mm.get(String(t.member_id||"")),i=im.get(String(t.investor_id||"")),f=fm.get(String(t.fleet_id||""));
+        const im=new Map((investors||[]).map(x=>[String(x.id),x]));
+        const fm=new Map((fleets||[]).map(x=>[String(x.id),x]));
+        return (data||[]).map(t=>{
+          const m=mm.get(String(t.member_id||'')),i=im.get(String(t.investor_id||'')),f=fm.get(String(t.fleet_id||''));
         return this.fromDbTransaction({...t,member_name:m?.name||'',investor_name:i?.name||'',vehicle_name:f?.vehicle_name||'',vehicle_number:f?.vehicle_number||''});
       });
     }
@@ -557,7 +557,7 @@ const app = {
     }
     if(store==='investors'){
       if(!this.user){
-        const {data,error}=await sb.from('investors').select('id,name,active').eq('active',true).order('name');
+        const {data,error}=await sb.from('investors').select('id,name,active').order('name');
         if(error) throw error;
         return (data||[]).map(x=>({id:x.id,name:x.name,phone:'',details:'',role:'Investor',active:x.active}));
       }
@@ -567,7 +567,7 @@ const app = {
     }
     if(store==='fleets'){
       if(!this.user){
-        const {data,error}=await sb.from('fleets').select('id,vehicle_name,vehicle_number,active').eq('active',true).order('vehicle_name');
+        const {data,error}=await sb.from('fleets').select('id,vehicle_name,vehicle_number,active').order('vehicle_name');
         if(error) throw error;
         return (data||[]).map(x=>({id:x.id,name:x.vehicle_name,vehicleName:x.vehicle_name,vehicleNumber:x.vehicle_number||'',driverName:'',currentValue:0,details:'',active:x.active,createdAt:''}));
       }
@@ -2024,13 +2024,13 @@ window.numericExcelAmount = function(v){
       else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());
       else if(title==='Active Entries')data=active;
       else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');
-      const investorMap=new Map((await this.getAll('investors')).map(x=>[String(x.id),x.name||'']));
-      const fleetMap=new Map((await this.getAll('fleets')).map(x=>[String(x.id),x.name||x.vehicleName||'']));
-      headers=['#','ID','Type','Investor Name','Fleet Name','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];
+      const investorMap=new Map((await this.getAll('investors',{force:true})).map(x=>[String(x.id),String(x.name||'')]));
+      const fleetMap=new Map((await this.getAll('fleets',{force:true})).map(x=>[String(x.id),String(x.name||x.vehicleName||'')]));
+      headers=['#','ID','Type','Investor Name','Fleet Name','Investor/Fleet ID','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];
       rows=data.map((t,i)=>{
-        const investorName=t.investorName||investorMap.get(String(t.investorId||""))||(t.entityType==="INVESTOR"?(t.depositor||t.memberName||""):"");
+        const investorName=String(t.investorName||investorMap.get(String(t.investorId||''))||(t.entityType==='INVESTOR'?(t.depositor||t.memberName||''):''));
         const fleetName=t.fleetName||fleetMap.get(String(t.fleetId||''))||'';
-        return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',investorName,fleetName,t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.details,t.status];
+        return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',investorName,fleetName,String(t.investorId||t.fleetId||''),t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.details,t.status];
       });
     }
     this.currentScoreRows=[headers].concat(rows);
