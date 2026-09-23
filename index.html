@@ -901,7 +901,38 @@ const app = {
   async logout(){await this.sb.auth.signOut();this.currentSection='dashboard';},
   requireEntry(){if(this.canWrite)return true;this.openLogin();return false;},
   fromDbTransaction(t){
-    const d=t.capture_date||t.created_at||''; return {id:t.id,transactionId:t.transaction_id,type:t.flow,flowCategory:t.entity_type,date:t.transaction_date,captureDate:d?String(d).slice(0,10):'',captureDateTime:d?new Date(d).toLocaleString('en-GB'):'',createdAt:d?new Date(d).toLocaleString('en-GB'):'',amount:Number(t.amount||0),category:t.category||'',purpose:t.purpose||'',depositor:t.member_name||'',memberName:t.member_name||'',investorName:t.investor_name||'',fleetName:t.vehicle_name||'',withdrawalPerson:t.withdrawal_person||'',payeePhone:t.payee_phone||'',costingPoint:t.costing_point||'',paymentMode:t.payment_mode||'',approvalStatus:t.approval_status||'',voucherNumber:t.voucher_number||'',details:t.details||'',status:t.status||'ACTIVE',voidDate:t.void_date?new Date(t.void_date).toLocaleString('en-GB'):'',voidReason:t.void_reason||''};
+    const d=t.capture_date||t.created_at||'';
+    return {
+      id:t.id,
+      transactionId:t.transaction_id,
+      type:t.flow,
+      flowCategory:t.entity_type,
+      entityType:t.entity_type,
+      memberId:t.member_id||null,
+      investorId:t.investor_id||null,
+      fleetId:t.fleet_id||null,
+      date:t.transaction_date,
+      captureDate:d?String(d).slice(0,10):'',
+      captureDateTime:d?new Date(d).toLocaleString('en-GB'):'',
+      createdAt:d?new Date(d).toLocaleString('en-GB'):'',
+      amount:Number(t.amount||0),
+      category:t.category||'',
+      purpose:t.purpose||'',
+      depositor:t.member_name||'',
+      memberName:t.member_name||'',
+      investorName:t.investor_name||'',
+      fleetName:t.vehicle_name||'',
+      withdrawalPerson:t.withdrawal_person||'',
+      payeePhone:t.payee_phone||'',
+      costingPoint:t.costing_point||'',
+      paymentMode:t.payment_mode||'',
+      approvalStatus:t.approval_status||'',
+      voucherNumber:t.voucher_number||'',
+      details:t.details||'',
+      status:t.status||'ACTIVE',
+      voidDate:t.void_date?new Date(t.void_date).toLocaleString('en-GB'):'',
+      voidReason:t.void_reason||''
+    };
   },
   async insertOnlineTransaction(tx){
     if(!this.canWrite)throw new Error('Login required.');
@@ -1003,27 +1034,45 @@ const app = {
     const users=await this.getUsersByRole('Member');
     const {months}=await this.getInstallmentPeriod();
     const installmentAmount=5000;
+
     return users.map(u=>{
       const name=String(u.name||'').trim();
       const memberTxs=txs.filter(t=>
         t.status!=='VOID' &&
         t.type==='CASH_IN' &&
         t.entityType==='MEMBER' &&
-        String(t.memberName||t.depositor||'').trim().toLowerCase()===name.toLowerCase()
+        (
+          (t.memberId && u.id && String(t.memberId)===String(u.id)) ||
+          (!t.memberId && String(t.memberName||t.depositor||'').trim().toLowerCase()===name.toLowerCase()) ||
+          (t.memberId && !u.id && String(t.memberName||t.depositor||'').trim().toLowerCase()===name.toLowerCase())
+        )
       );
+
       const deposits=memberTxs.length;
       const total=memberTxs.reduce((s,t)=>s+Number(t.amount||0),0);
-      const missingMonths=months.filter(m=>!memberTxs.some(t=>
-        String(t.date||'').startsWith(m) &&
-        (String(t.purpose||'').trim().toLowerCase()==='installment' || String(t.category||'').trim().toLowerCase()==='member deposit')
-      ));
-      const last=[...memberTxs].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''))[0]?.date||'';
+
+      const monthPaid=Object.fromEntries(months.map(m=>[
+        m,
+        memberTxs
+          .filter(t=>String(t.date||'').startsWith(m))
+          .reduce((s,t)=>s+Number(t.amount||0),0)
+      ]));
+
+      const pendingByMonth=months
+        .map(m=>({month:m,paid:Number(monthPaid[m]||0),pending:Math.max(0,installmentAmount-Number(monthPaid[m]||0))}))
+        .filter(x=>x.pending>0);
+
+      const last=[...memberTxs]
+        .sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''))[0]?.date||'';
+
       return {
+        id:u.id,
         name,
         count:deposits,
         total,
-        pendingAmount:missingMonths.length*installmentAmount,        missingMonths,
-        missingLabels:missingMonths.map(m=>new Date(m+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'})),
+        pendingAmount:pendingByMonth.reduce((s,x)=>s+x.pending,0),
+        missingMonths:pendingByMonth.map(x=>x.month),
+        missingLabels:pendingByMonth.map(x=>new Date(x.month+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'})),
         last
       };
     }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
@@ -1035,8 +1084,34 @@ const app = {
   },
 
   renderMonthly(txs){
-    const box=document.getElementById('monthlyInstallmentSummary'),now=new Date(),start=new Date(2026,4,1),end=new Date(now.getFullYear(),now.getMonth(),1),rows=[];
-    for(let d=new Date(start);d<=end;d.setMonth(d.getMonth()+1)){const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,deposits=txs.filter(t=>t.status!=='VOID'&&t.type==='CASH_IN'&&t.entityType==='MEMBER'&&String(t.date||'').startsWith(key));rows.push(`<div class="month-box"><span>${d.toLocaleString('en-US',{month:'short',year:'2-digit'})}</span><strong>${this.fmt(deposits.reduce((s,t)=>s+Number(t.amount||0),0))}</strong><small>${deposits.length} deposits</small></div>`);} box.innerHTML=rows.join('');
+    const box=document.getElementById('monthlyInstallmentSummary');
+    if(!box) return;
+
+    const now=new Date();
+    const start=new Date(2026,4,1);
+    const end=new Date(now.getFullYear(),now.getMonth(),1);
+    const rows=[];
+
+    for(let d=new Date(start);d<=end;d.setMonth(d.getMonth()+1)){
+      const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const deposits=txs.filter(t=>
+        t.status!=='VOID' &&
+        t.type==='CASH_IN' &&
+        t.entityType==='MEMBER' &&
+        String(t.date||'').startsWith(key)
+      );
+
+      const amount=deposits.reduce((s,t)=>s+Number(t.amount||0),0);
+      rows.push(
+        `<div class="month-box">
+          <span>${d.toLocaleString('en-US',{month:'short',year:'2-digit'})}</span>
+          <strong>${this.fmt(amount)}</strong>
+          <small>${deposits.length} payments</small>
+        </div>`
+      );
+    }
+
+    box.innerHTML=rows.join('');
   },
 
   renderPurpose(txs){
@@ -1061,7 +1136,7 @@ const app = {
   },
   async showScore(title){
     const all=await this.getAll('transactions'),active=all.filter(t=>t.status!=='VOID');let rows=[],headers=[],heading=title;
-    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.totalAmount),x.missingMonths.join(', ')]);}
+    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.pendingAmount),x.missingMonths.join(', ')]);}
     else{let data=[];if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');else if(title==='Total Expense')data=active.filter(t=>t.type==='CASH_OUT');else if(title==="Today's Cash In")data=active.filter(t=>t.type==='CASH_IN'&&t.date===this.today());else if(title==="Today's Cash Out")data=active.filter(t=>t.type==='CASH_OUT'&&t.date===this.today());else if(title==='Current Balance')data=active;else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());else if(title==='Active Entries')data=active;else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];rows=data.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'Imported',Number(String(t.amount??0).replace(/[^0-9.-]/g,'')),t.category,t.purpose,t.withdrawalPerson,t.depositor,t.details,t.status]);}
     this.currentScoreRows=[headers,...rows];document.getElementById('scoreModalSearch').value='';document.getElementById('scoreModalTitle').textContent=heading;this.filterScorecardPopup();document.getElementById('scoreModal').classList.add('open');
   },
