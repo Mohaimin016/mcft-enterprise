@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-6">
+<meta name="mcft-build" content="20260923-5">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -1034,7 +1034,7 @@ const app = {
     const today=this.today(),tin=all.filter(t=>t.status!=='VOID'&&t.type==='CASH_IN'&&t.date===today),tout=all.filter(t=>t.status!=='VOID'&&t.type==='CASH_OUT'&&t.date===today);
     document.getElementById('todayCashIn').textContent=this.fmt(sum(tin));document.getElementById('todayCashOut').textContent=this.fmt(sum(tout));document.getElementById('todayBalance').textContent=this.fmt(sum(tin)-sum(tout));document.getElementById('todayCashInCount').textContent=tin.length+' Entries';document.getElementById('todayCashOutCount').textContent=tout.length+' Expense Entries';
     document.getElementById('activeEntries').textContent=all.filter(t=>t.status!=='VOID').length;document.getElementById('voidEntries').textContent=all.filter(t=>t.status==='VOID').length;
-    const non=await this.nonDepositors();document.getElementById('notDepositorUsers').textContent=non.length;document.getElementById('totalInstallmentAmount').textContent=this.fmt(non.reduce((s,x)=>s+x.totalAmount,0));
+    const non=await this.nonDepositors();document.getElementById('notDepositorUsers').textContent=non.length;document.getElementById('totalInstallmentAmount').textContent=this.fmt(non.reduce((s,x)=>s+x.pendingAmount,0));
     document.getElementById('dashboardCapture').textContent=new Date().toLocaleString('en-GB');document.getElementById('loadedRecordCount').textContent=all.length;
     this.renderMonthly(all);this.renderPurpose(active);await this.renderDepositors(all);this.renderRecent(all);await this.renderHistory();
   },
