@@ -100,7 +100,7 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
       <button id="btnRestore" class="btn btn-secondary" onclick="app.restoreUI()">📤 Restore</button>
       <button id="btnNewEntry" class="btn btn-primary" onclick="app.showSection('entry');app.scrollToEntry()">➕ New Entry</button>
       <button id="btnNewUser" class="btn btn-secondary" onclick="app.openUserModal()">👤 New User</button>
-      <button class="btn btn-success" onclick="app.exportSelectedSectionExcel()">📊 Export Excel</button><button id="loginBtn" class="btn btn-secondary" onclick="app.openLogin()">🔐 Login</button><button id="logoutBtn" class="btn btn-secondary auth-hidden" onclick="app.logout()">🚪 Logout</button>
+      <button class="btn btn-success" onclick="app.exportSelectedSectionExcel()">📊 Export Excel</button><button id="refreshBtn" class="btn btn-secondary" onclick="app.refreshLiveData(true)">🔄 Refresh</button><button id="loginBtn" class="btn btn-secondary" onclick="app.openLogin()">🔐 Login</button><button id="logoutBtn" class="btn btn-secondary auth-hidden" onclick="app.logout()">🚪 Logout</button>
     </div>
   </div>
 </header>
@@ -438,6 +438,7 @@ const app = {
     await this.renderInvestors();
     await this.renderFleets();
     await this.updateHealth();
+    this.startAutoRefresh();
   },
   initDB(){ return Promise.resolve(); },
   async getAll(store){
@@ -529,6 +530,40 @@ const app = {
       const h=document.getElementById('dbHealth'); if(h)h.textContent='Database: Supabase OK · '+txs.length+' transactions · '+investors.length+' investors · '+fleets.length+' fleets';
       const b=document.getElementById('backupHealth'); if(b){const last=await this.getSettings('lastBackupAt'); if(!last)b.textContent='Backup: never';else{const age=Date.now()-new Date(last).getTime();b.textContent='Backup: '+(age>86400000?'DUE':'OK');b.style.color=age>86400000?'#ffd1d1':'#d1fae5';}}
     }catch(e){const h=document.getElementById('dbHealth');if(h){h.textContent='Database: ERROR';h.style.color='#ffd1d1';}console.error(e);}
+  },
+  async refreshLiveData(manual=false){
+    try{
+      await this.populateForms();
+      await this.render();
+      await this.renderInvestors();
+      await this.renderFleets();
+      await this.updateHealth();
+      if(manual){
+        const btn=document.getElementById('refreshBtn');
+        if(btn){
+          const old=btn.textContent;
+          btn.textContent='✅ Updated';
+          setTimeout(()=>{btn.textContent=old;},1200);
+        }
+      }
+    }catch(e){
+      console.error('[MCFT live refresh]',e);
+      const h=document.getElementById('dbHealth');
+      if(h){
+        h.textContent='Database: Refresh Error';
+        h.style.color='#ffd1d1';
+      }
+    }
+  },
+  startAutoRefresh(){
+    if(this._refreshTimer) clearInterval(this._refreshTimer);
+    this._refreshTimer=setInterval(()=>{
+      if(document.hidden) return;
+      this.refreshLiveData(false);
+    },10000);
+    document.addEventListener('visibilitychange',()=>{
+      if(!document.hidden) this.refreshLiveData(false);
+    });
   },
   async seedSourceData(){ return; },
   async getCustomData(){
