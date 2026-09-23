@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-7">
+<meta name="mcft-build" content="20260923-9">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -2025,8 +2025,14 @@ window.numericExcelAmount = function(v){
       else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());
       else if(title==='Active Entries')data=active;
       else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');
+      const investorMap=new Map((await this.getAll('investors')).map(x=>[String(x.id),x.name||'']));
+      const fleetMap=new Map((await this.getAll('fleets')).map(x=>[String(x.id),x.name||x.vehicleName||'']));
       headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Investor Name','Fleet Name','Details','Status'];
-      rows=data.map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.investorName||'',t.fleetName||'',t.details,t.status]);
+      rows=data.map((t,i)=>{
+        const investorName=t.investorName||investorMap.get(String(t.investorId||''))||'';
+        const fleetName=t.fleetName||fleetMap.get(String(t.fleetId||''))||'';
+        return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',investorName,fleetName,t.details,t.status];
+      });
     }
     this.currentScoreRows=[headers].concat(rows);
     origFilterScore();
