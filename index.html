@@ -490,6 +490,7 @@ const app = {
           .order('transaction_date',{ascending:false})
           .order('capture_date',{ascending:false});
         if(error) throw error;
+
         const [members,investors,fleets]=await Promise.all([
           this.getAll('members'),this.getAll('investors'),this.getAll('fleets')
         ]);
@@ -502,11 +503,11 @@ const app = {
         });
       }
 
-      // Public viewer: only request columns explicitly granted to anon.
+      // Public viewer: request ONLY columns that the anon role is granted.
       const publicCols=[
         'id','transaction_id','transaction_date','capture_date','flow','entity_type',
         'member_id','investor_id','fleet_id','category','purpose','amount','details',
-        'status','void_date','void_reason'
+        'status','void_date'
       ].join(',');
       const {data,error}=await sb.from('transactions').select(publicCols)
         .order('transaction_date',{ascending:false})
@@ -525,23 +526,33 @@ const app = {
       });
     }
     if(store==='members'){
-      const selectCols=this.user?'*':'id,name,active';
-      let q=sb.from('members').select(selectCols).order('name');
-      if(!this.user) q=q.eq('active',true);
-      const {data,error}=await q; if(error) throw error; return data||[];
+      if(!this.user){
+        const {data,error}=await sb.from('members').select('id,name,active').eq('active',true).order('name');
+        if(error) throw error;
+        return data||[];
+      }
+      const {data,error}=await sb.from('members').select('*').order('name');
+      if(error) throw error;
+      return data||[];
     }
     if(store==='investors'){
-      const selectCols=this.user?'*':'id,name,active';
-      let q=sb.from('investors').select(selectCols).order('name');
-      if(!this.user) q=q.eq('active',true);
-      const {data,error}=await q; if(error) throw error;
+      if(!this.user){
+        const {data,error}=await sb.from('investors').select('id,name,active').eq('active',true).order('name');
+        if(error) throw error;
+        return (data||[]).map(x=>({id:x.id,name:x.name,phone:'',details:'',role:'Investor',active:x.active}));
+      }
+      const {data,error}=await sb.from('investors').select('*').order('name');
+      if(error) throw error;
       return (data||[]).map(x=>({id:x.id,name:x.name,phone:x.phone||'',details:x.details||'',role:'Investor',active:x.active}));
     }
     if(store==='fleets'){
-      const selectCols=this.user?'*':'id,vehicle_name,vehicle_number,active';
-      let q=sb.from('fleets').select(selectCols).order('vehicle_name');
-      if(!this.user) q=q.eq('active',true);
-      const {data,error}=await q; if(error) throw error;
+      if(!this.user){
+        const {data,error}=await sb.from('fleets').select('id,vehicle_name,vehicle_number,active').eq('active',true).order('vehicle_name');
+        if(error) throw error;
+        return (data||[]).map(x=>({id:x.id,name:x.vehicle_name,vehicleName:x.vehicle_name,vehicleNumber:x.vehicle_number||'',driverName:'',currentValue:0,details:'',active:x.active,createdAt:''}));
+      }
+      const {data,error}=await sb.from('fleets').select('*').order('vehicle_name');
+      if(error) throw error;
       return (data||[]).map(x=>({id:x.id,name:x.vehicle_name,vehicleName:x.vehicle_name,vehicleNumber:x.vehicle_number||'',driverName:x.driver_name||'',currentValue:Number(x.current_value||0),details:x.details||'',active:x.active,createdAt:x.created_at}));
     }
     if(store==='users'){
@@ -1010,4 +1021,307 @@ const app = {
         name,
         count:deposits,
         total,
-        pendingAmount:missingMonths.length*installmentAmount,
+        pendingAmount:missingMonths.length*installmentAmount,        missingMonths,
+        missingLabels:missingMonths.map(m=>new Date(m+'-01').toLocaleString('en-US',{month:'short',year:'2-digit'})),
+        last
+      };
+    }).sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+  },
+
+  async nonDepositors(){
+    const txs=await this.getAll('transactions');
+    return (await this.memberPortalRows(txs)).filter(x=>x.pendingAmount>0);
+  },
+
+  renderMonthly(txs){
+    const box=document.getElementById('monthlyInstallmentSummary'),now=new Date(),start=new Date(2026,4,1),end=new Date(now.getFullYear(),now.getMonth(),1),rows=[];
+    for(let d=new Date(start);d<=end;d.setMonth(d.getMonth()+1)){const key=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`,deposits=txs.filter(t=>t.status!=='VOID'&&t.type==='CASH_IN'&&t.entityType==='MEMBER'&&String(t.date||'').startsWith(key));rows.push(`<div class="month-box"><span>${d.toLocaleString('en-US',{month:'short',year:'2-digit'})}</span><strong>${this.fmt(deposits.reduce((s,t)=>s+Number(t.amount||0),0))}</strong><small>${deposits.length} deposits</small></div>`);} box.innerHTML=rows.join('');
+  },
+
+  renderPurpose(txs){
+    const map={};txs.forEach(t=>{const key=(t.category||'Uncategorized')+'||'+(t.purpose||'Unspecified');if(!map[key])map[key]={category:t.category||'Uncategorized',purpose:t.purpose||'Unspecified',cin:0,cout:0};if(t.type==='CASH_IN')map[key].cin+=Number(t.amount||0);else map[key].cout+=Number(t.amount||0);});
+    const rows=Object.values(map).sort((a,b)=>(b.cin+b.cout)-(a.cin+a.cout));document.getElementById('purposeSummary').innerHTML=rows.length?rows.map(x=>`<tr><td>${this.esc(x.category)}</td><td>${this.esc(x.purpose)}</td><td>${this.fmt(x.cin)}</td><td>${this.fmt(x.cout)}</td><td>${this.fmt(x.cin-x.cout)}</td></tr>`).join(''):'<tr><td colspan="5" class="empty">No data</td></tr>';
+  },
+
+  async renderDepositors(txs){
+    const rows=await this.memberPortalRows(txs);
+    const body=document.getElementById('depositorSummary');
+    body.innerHTML=rows.length?rows.map((x,i)=>`<tr><td>${i+1}</td><td><strong>${this.esc(x.name)}</strong></td><td>${x.count}</td><td>${this.fmt(x.total)}</td><td>${this.fmt(x.pendingAmount)}</td><td>${this.esc(x.missingLabels.join(', ')||'None')}</td><td>${this.esc(x.last||'—')}</td></tr>`).join(''):'<tr><td colspan="7" class="empty">No members found</td></tr>';
+  },
+
+  renderRecent(txs){const rows=[...txs].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,50);document.getElementById('recentTransactions').innerHTML=rows.length?rows.map(t=>this.rowHtml(t,false)).join(''):'<tr><td colspan="11" class="empty">No transactions</td></tr>';},
+  rowHtml(t,action=true){const canVoid=action&&this.canWrite&&t.status==='ACTIVE';return `<tr><td>${this.esc(t.transactionId)}</td><td>${t.type==='CASH_IN'?'Cash In':'Expense'}</td><td>${this.esc(t.date)}</td><td>${this.esc(t.captureDateTime||t.createdAt||'')}</td><td>${this.fmt(t.amount)}</td><td>${this.esc(t.category)}</td><td>${this.esc(t.purpose)}</td><td>${this.esc(t.withdrawalPerson)}</td><td>${this.esc(t.depositor||t.memberName||t.investorName||t.fleetName)}</td><td>${this.esc(t.details)}</td><td><span class="badge ${t.status==='ACTIVE'?'badge-active':'badge-void'}">${t.status}</span></td>${action?`<td>${canVoid?`<button class="btn-small" onclick="app.voidTx('${this.esc(t.id)}')">Void</button>`:'—'}</td>`:''}</tr>`;},
+  async renderHistory(){const all=await this.getAll('transactions'),q=document.getElementById('historySearch').value.toLowerCase(),st=document.getElementById('historyStatus').value,rows=all.filter(t=>(!st||t.status===st)&&(!q||JSON.stringify(t).toLowerCase().includes(q))).sort((a,b)=>(b.date||'').localeCompare(a.date||''));document.getElementById('historyBody').innerHTML=rows.length?rows.map(t=>this.rowHtml(t,true)).join(''):'<tr><td colspan="12" class="empty">No transactions</td></tr>';},
+
+  async voidTx(id){
+    if(!this.requireEntry()) return;
+    const reason=prompt('Void reason (required):'); if(reason===null)return; if(!reason.trim()){alert('Void reason is required.');return;}
+    try{const {error}=await this.sb.from('transactions').update({status:'VOID',void_reason:reason.trim(),void_date:new Date().toISOString(),voided_by:this.user.id}).eq('id',id).eq('status','ACTIVE'); if(error)throw error; await this.render(); await this.updateHealth();}catch(e){alert('Void failed: '+e.message);}
+  },
+  async showScore(title){
+    const all=await this.getAll('transactions'),active=all.filter(t=>t.status!=='VOID');let rows=[],headers=[],heading=title;
+    if(title==='Not Depositor Users'||title==='Total Instalment Amount'){const n=await this.nonDepositors();heading=title==='Not Depositor Users'?'👤 Non Depositor Users — Installment Status':'💳 Total Instalment Amount — Missing Payments';headers=['#','Name','Total Amount','Missing Month(s)'];rows=n.map((x,i)=>[i+1,x.name,this.fmt(x.totalAmount),x.missingMonths.join(', ')]);}
+    else{let data=[];if(title==='Total Cash In')data=active.filter(t=>t.type==='CASH_IN');else if(title==='Total Expense')data=active.filter(t=>t.type==='CASH_OUT');else if(title==="Today's Cash In")data=active.filter(t=>t.type==='CASH_IN'&&t.date===this.today());else if(title==="Today's Cash Out")data=active.filter(t=>t.type==='CASH_OUT'&&t.date===this.today());else if(title==='Current Balance')data=active;else if(title==="Today's Balance")data=active.filter(t=>t.date===this.today());else if(title==='Active Entries')data=active;else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];rows=data.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map((t,i)=>[i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'Imported',Number(String(t.amount??0).replace(/[^0-9.-]/g,'')),t.category,t.purpose,t.withdrawalPerson,t.depositor,t.details,t.status]);}
+    this.currentScoreRows=[headers,...rows];document.getElementById('scoreModalSearch').value='';document.getElementById('scoreModalTitle').textContent=heading;this.filterScorecardPopup();document.getElementById('scoreModal').classList.add('open');
+  },
+
+  closeModal(id){const modal=document.getElementById(id);if(!modal)return;modal.classList.remove('open');modal.querySelector('.modal-content')?.classList.remove('maximized');},
+  toggleMaximize(id){const modal=document.getElementById(id);if(!modal)return;modal.querySelector('.modal-content')?.classList.toggle('maximized');},
+  closeOnBackdrop(e){if(e.target.classList.contains('modal'))this.closeModal(e.target.id);},
+  exportScorecard(){if(!this.currentScoreRows.length){alert('No scorecard data to export.');return;}this.downloadXlsx(this.currentScoreRows,'Scorecard');},
+
+  async exportAllExcel(){
+    return this.exportSelectedSectionExcel();
+  },
+
+  async exportSelectedSectionExcel(){
+    const section=this.currentSection||document.querySelector('.section.active')?.id||'dashboard';
+    const txs=await this.getAll('transactions');
+    const cleanTx=txs.filter(t=>t && typeof t==='object');
+    const headers=['Transaction ID','Transaction Date','Capture Date','Capture Date/Time','Amount','Type','Flow Category','Category','Purpose','Member','Investor','Vehicle / Fleet','Depositor','Withdrawal Person','Payee Phone','Costing Point','Payment Mode','Approval Status','Voucher Number','Details','Status','Void Date','Void Reason'];
+    const map=t=>[t.transactionId,t.date,t.captureDate||'',t.captureDateTime||t.createdAt||'Imported',Number(t.amount||0),t.type==='CASH_IN'?'Cash In':'Cash Out',t.flowCategory||'',t.category||'',t.purpose||'',t.memberName||'',t.investorName||'',t.fleetName||'',t.depositor||'',t.withdrawalPerson||'',t.payeePhone||'',t.costingPoint||'',t.paymentMode||'',t.approvalStatus||'',t.voucherNumber||'',t.details||'',t.status||'',t.voidDate||'',t.voidReason||''];
+
+    if(section==='dashboard'){
+      const active=cleanTx.filter(t=>t.status!=='VOID');
+      const range=this.getRange();
+      const filtered=active.filter(t=>(!range.from||t.date>=range.from)&&(!range.to||t.date<=range.to));
+      const sum=a=>a.reduce((n,t)=>n+Number(t.amount||0),0);
+      const cin=filtered.filter(t=>t.type==='CASH_IN'),cout=filtered.filter(t=>t.type==='CASH_OUT');
+      const overview=[
+        ['Metric','Amount','Entries'],
+        ['Total Cash In',sum(cin),cin.length],
+        ['Total Expense',sum(cout),cout.length],
+        ['Current Balance',sum(cin)-sum(cout),filtered.length],
+        ['Active Entries',active.length,''],
+        ['Void Entries',cleanTx.filter(t=>t.status==='VOID').length,'']
+      ];
+      const purposeMap={};
+      filtered.forEach(t=>{const k=(t.category||'Uncategorized')+'||'+(t.purpose||'Unspecified');if(!purposeMap[k])purposeMap[k]={category:t.category||'Uncategorized',purpose:t.purpose||'Unspecified',cin:0,cout:0};if(t.type==='CASH_IN')purposeMap[k].cin+=Number(t.amount||0);else purposeMap[k].cout+=Number(t.amount||0);});
+      const purpose=[['Category','Purpose','Cash In','Cash Out','Net'],...Object.values(purposeMap).sort((a,b)=>(b.cin+b.cout)-(a.cin+a.cout)).map(x=>[x.category,x.purpose,x.cin,x.cout,x.cin-x.cout])];
+      const memberRows=await this.memberPortalRows(cleanTx.filter(t=>t.status!=='VOID'));
+      const members=[['#','Member','Deposits','Total Amount','Pending Amount','Pending Month(s)','Last Deposit'],...memberRows.map((x,i)=>[i+1,x.name,x.count,x.total,x.pendingAmount,x.missingLabels.join(', '),x.last])];
+      const recent=[headers,...[...filtered].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||'')).slice(0,50).map(map)];
+      this.downloadExcelWorkbook([['Dashboard Summary',overview],['Purpose-wise Summary',purpose],['Member Depositor Summary',members],['Recent Transactions',recent]],'MCFT_Dashboard');
+      await this.audit('EXCEL_EXPORT',{section:'dashboard',records:filtered.length});
+      return;
+    }
+
+    if(section==='entry'){
+      const q=(document.getElementById('historySearch')?.value||'').trim().toLowerCase();
+      const st=document.getElementById('historyStatus')?.value||'';
+      const rows=cleanTx.filter(t=>(!st||t.status===st)&&(!q||JSON.stringify(t).toLowerCase().includes(q))).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));
+      this.downloadExcelWorkbook([['Transaction History',[headers,...rows.map(map)]]],'MCFT_New_Entry');
+      await this.audit('EXCEL_EXPORT',{section:'entry',records:rows.length});
+      return;
+    }
+
+    if(section==='investor'){
+      const investors=await this.getUsersByRole('Investor');
+      const selected=document.getElementById('investorPortalFilter')?.value||'';
+      const relevant=cleanTx.filter(t=>t.status!=='VOID'&&t.entityType==='INVESTOR'&&(!selected||t.investorName===selected));
+      const names=selected?[selected]:investors.map(u=>u.name);
+      const summary=[['#','Investor Name','Phone','Total Invested','Profit / Return Paid','Principal Returned','Capital Outstanding','Last Transaction'],...names.map((name,i)=>{
+        const u=investors.find(x=>x.name===name)||{};const tx=relevant.filter(t=>t.investorName===name);const invested=tx.filter(t=>t.type==='CASH_IN').reduce((s,t)=>s+Number(t.amount||0),0);const profit=tx.filter(t=>t.type==='CASH_OUT'&&(t.purpose==='PROFIT_RETURN'||t.purpose==='PROFIT_AND_PRINCIPAL')).reduce((s,t)=>s+Number(t.amount||0),0);const principal=tx.filter(t=>t.type==='CASH_OUT'&&(t.purpose==='PRINCIPAL_RETURN'||t.purpose==='PROFIT_AND_PRINCIPAL')).reduce((s,t)=>s+Number(t.amount||0),0);const last=[...tx].sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''))[0]?.date||'';return [i+1,name,u.phone||'',invested,profit,principal,Math.max(0,invested-principal),last];
+      })];
+      this.downloadExcelWorkbook([['Investor Summary',summary],['Investor Transactions',[headers,...relevant.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(map)]]],selected?'MCFT_Investor_'+selected:'MCFT_Investor');
+      await this.audit('EXCEL_EXPORT',{section:'investor',investor:selected||'ALL',records:relevant.length});
+      return;
+    }
+
+    if(section==='fleets'){
+      const fleets=await this.getAll('fleets');
+      const selected=document.getElementById('fleetPortalFilter')?.value||'';
+      const relevant=cleanTx.filter(t=>t.status!=='VOID'&&t.entityType==='FLEET'&&(!selected||t.fleetName===selected));
+      const names=selected?[selected]:fleets.map(f=>f.name);
+      const summary=[['#','Vehicle / Fleet Name','Vehicle Number','Driver Name','Purchase / Investment Cost','Fuel Cost','Maintenance Cost','Income','Expense','Current Value','Net','Details'],...names.map((name,i)=>{
+        const f=fleets.find(x=>x.name===name)||{};const tx=relevant.filter(t=>t.fleetName===name);const income=tx.filter(t=>t.type==='CASH_IN').reduce((s,t)=>s+Number(t.amount||0),0);const purchase=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='PURCHASE_INVESTMENT').reduce((s,t)=>s+Number(t.amount||0),0);const fuel=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='FUEL').reduce((s,t)=>s+Number(t.amount||0),0);const maint=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='MAINTENANCE').reduce((s,t)=>s+Number(t.amount||0),0);const expense=tx.filter(t=>t.type==='CASH_OUT').reduce((s,t)=>s+Number(t.amount||0),0);return [i+1,name,f.vehicleNumber||'',f.driverName||'',purchase,fuel,maint,income,expense,income-expense,Number(f.currentValue||0),f.details||''];
+      })];
+      this.downloadExcelWorkbook([['Fleet Summary',summary],['Fleet Transactions',[headers,...relevant.sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(map)]]],selected?'MCFT_Fleet_'+selected:'MCFT_Fleets');
+      await this.audit('EXCEL_EXPORT',{section:'fleets',fleet:selected||'ALL',records:relevant.length});
+      return;
+    }
+  },
+  downloadXlsx(rows,base){this.downloadExcelWorkbook([['Scorecard',rows]],base);},
+  downloadMultiXlsx(sheets,base){this.downloadExcelWorkbook(sheets,base);},
+  excelCell(v){if(v===null||v===undefined)return '';return String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');},
+  downloadExcelWorkbook(sheets,base){
+    const tabs=sheets.map(([name,rows])=>`<table><caption>${this.excelCell(name)}</caption><thead><tr>${(rows[0]||[]).map(h=>`<th>${this.excelCell(h)}</th>`).join('')}</tr></thead><tbody>${rows.slice(1).map(r=>`<tr>${r.map(v=>`<td>${this.excelCell(v)}</td>`).join('')}</tr>`).join('')}</tbody></table>`).join('');
+    const html=`<!DOCTYPE html><html><head><meta charset="UTF-8"><style>table{border-collapse:collapse;margin:20px 0;font-family:Arial}th,td{border:1px solid #999;padding:6px}th{font-weight:bold;background:#eee}caption{font-weight:bold;text-align:left;font-size:16px;margin-bottom:6px}</style></head><body>${tabs}</body></html>`;
+    this.downloadBlob(new Blob(['\ufeff',html],{type:'application/vnd.ms-excel'}),`${base}_${this.fileDate()}.xls`);
+  },
+  downloadBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.style.display='none';document.body.appendChild(a);a.click();setTimeout(()=>{a.remove();URL.revokeObjectURL(url)},1500);},
+  fileDate(){const d=new Date();return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;},
+
+  async backup(){
+    if(!this.canWrite){this.openLogin();return;}
+    try{
+      const transactions=await this.getAll('transactions'),users=await this.getAll('users'),investors=await this.getAll('investors'),fleets=await this.getAll('fleets'),auditLog=await this.getAll('auditLog'),custom=await this.getCustomData();
+      const payload={format:'MCFT Enterprise Supabase Backup',version:8,createdAt:new Date().toISOString(),transactions,users,investors,fleets,customCategories:custom.categories,customPurposes:custom.purposes,auditLog};
+      const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}); this.downloadBlob(blob,`MCFT_Backup_${this.fileDate()}.json`); await this.saveSetting('lastBackupAt',new Date().toISOString()); await this.updateHealth();
+    }catch(e){alert('Backup failed: '+e.message);}
+  },
+  restoreUI(){document.getElementById('restoreModal').classList.add('open');},
+  async restore(){
+    if(this.role!=='admin'){alert('Administrator access is required for restore.');return;}
+    alert('Online restore is disabled in this first Supabase-connected build. Please keep the JSON backup. We will add a controlled admin restore/import function after the live connection is verified.');
+  }
+};
+
+document.addEventListener('DOMContentLoaded',async()=>{
+  try{await app.init();document.querySelectorAll('.modal').forEach(m=>m.addEventListener('click',e=>app.closeOnBackdrop(e)));document.addEventListener('keydown',e=>{if(e.key==='Escape')document.querySelectorAll('.modal.open').forEach(m=>app.closeModal(m.id));});}
+  catch(error){console.error(error);const msg=String(error&&error.message?error.message:error).replace(/[<>&"]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));document.body.insertAdjacentHTML('afterbegin','<div style="background:#fee2e2;color:#991b1b;padding:14px 18px;font-weight:700">Data loading failed: '+msg+'</div>');}
+});
+</script>
+
+<script>
+/* Recent Transactions: show exactly 10 at a time, newest first. */
+(function(){
+  const PAGE_SIZE = 10;
+  let recentPage = 1;
+
+  function getRecentRows() {
+    // Prefer the app's transaction array if available.
+    const candidates = [
+      window.transactions,
+      window.allTransactions,
+      window.currentTransactions,
+      window.transactionData
+    ];
+    for (const arr of candidates) {
+      if (Array.isArray(arr)) return arr.slice();
+    }
+
+    // Fallback: read rows currently present in the recent transaction table.
+    const table = document.querySelector('#recentTransactionsTable, #transactionsTable, table');
+    if (!table) return [];
+    const body = table.querySelector('tbody');
+    return body ? Array.from(body.querySelectorAll('tr')) : [];
+  }
+
+  function findRecentContainer(){
+    return document.querySelector(
+      '#recentTransactionsTable tbody, #recentTransactions tbody, #transactionsTable tbody, ' +
+      '#recentTransactionTable tbody'
+    );
+  }
+
+  function getDateValue(row){
+    const d = row && (row.date || row.transactionDate || row.createdAt || row.captureDateTime);
+    return d ? new Date(d).getTime() || 0 : 0;
+  }
+
+  function renderFromArray(arr){
+    const tbody = findRecentContainer();
+    if (!tbody) return false;
+
+    // This only handles object arrays when the app exposes its data.
+    const totalPages = Math.max(1, Math.ceil(arr.length / PAGE_SIZE));
+    recentPage = Math.min(Math.max(1, recentPage), totalPages);
+
+    arr.sort((a,b)=>getDateValue(b)-getDateValue(a));
+    const start = (recentPage-1)*PAGE_SIZE;
+    const pageRows = arr.slice(start, start+PAGE_SIZE);
+
+    // If the existing application renderer is available, use it rather than
+    // rebuilding its row HTML and event handlers.
+    return false;
+  }
+
+  function updateControls(totalCount){
+    const info = document.getElementById('recentPageInfo');
+    const prev = document.getElementById('recentPrevBtn');
+    const next = document.getElementById('recentNextBtn');
+    if (!info || !prev || !next) return;
+
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    recentPage = Math.min(Math.max(1, recentPage), totalPages);
+    info.textContent = 'Page ' + recentPage + ' of ' + totalPages;
+    prev.disabled = recentPage <= 1;
+    next.disabled = recentPage >= totalPages;
+  }
+
+  function paginateExistingRows(){
+    const tbody = findRecentContainer();
+    if (!tbody) return;
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    // Do not count the "no data" row.
+    const realRows = rows.filter(r => !/no (data|information)|no transaction/i.test(r.textContent || ''));
+
+    if (!realRows.length) {
+      updateControls(0);
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(realRows.length / PAGE_SIZE));
+    recentPage = Math.min(Math.max(1, recentPage), totalPages);
+
+    const start = (recentPage-1)*PAGE_SIZE;
+    const end = start+PAGE_SIZE;
+
+    realRows.forEach((row, i)=>{
+      row.style.display = (i >= start && i < end) ? '' : 'none';
+    });
+
+    updateControls(realRows.length);
+  }
+
+  function hook(){
+    const prev = document.getElementById('recentPrevBtn');
+    const next = document.getElementById('recentNextBtn');
+
+    if (prev && !prev.dataset.bound) {
+      prev.dataset.bound = '1';
+      prev.addEventListener('click', ()=>{
+        if (recentPage > 1) {
+          recentPage--;
+          paginateExistingRows();
+        }
+      });
+    }
+
+    if (next && !next.dataset.bound) {
+      next.dataset.bound = '1';
+      next.addEventListener('click', ()=>{
+        const tbody = findRecentContainer();
+        const count = tbody ? tbody.querySelectorAll('tr').length : 0;
+        const totalPages = Math.max(1, Math.ceil(count/PAGE_SIZE));
+        if (recentPage < totalPages) {
+          recentPage++;
+          paginateExistingRows();
+        }
+      });
+    }
+
+    paginateExistingRows();
+  }
+
+  // Observe the transaction table because the main app re-renders it.
+  const observer = new MutationObserver(()=>setTimeout(hook, 0));
+  observer.observe(document.body, {childList:true, subtree:true});
+
+  document.addEventListener('DOMContentLoaded', hook);
+  setTimeout(hook, 500);
+  setTimeout(hook, 1500);
+  setTimeout(hook, 3000);
+
+  // Expose reset for the app if it re-renders after filtering.
+  window.resetRecentTransactionPagination = function(){
+    recentPage = 1;
+    setTimeout(hook, 0);
+  };
+})();
+</script>
+
+
+<script>
+/* Excel export safety: amounts are numeric values, not ৳-formatted text. */
+window.numericExcelAmount = function(v){
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  const n = Number(String(v ?? '').replace(/[^\d.-]/g,''));
+  return Number.isFinite(n) ? n : 0;
+};
+</script>
+
+</body>
+</html>
