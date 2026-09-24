@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260923-14">
+<meta name="mcft-build" content="20260924-15">
 <title>MCFT Enterprise - Online Viewer</title>
 
 <style>
@@ -647,11 +647,11 @@ const app = {
   async populateForms(preferredUser=''){
     const {categories,purposes}=await this.getCustomData();
     const cashInCats=[...new Set(['Member Deposit','Investor Investment','Fleet / Rent','Other Income','Refund','Other',...categories.CASH_IN])];
-    const cashInPurposes=[...new Set(['Installment','General Deposit','Investment','Fleet Rent / Income','Other Income','Refund','Other',...purposes.CASH_IN])];
+    const cashInPurposes=[...new Set(['Installment','General Deposit','Investment','RENT','Other Income','Refund','Other',...purposes.CASH_IN].map(x=>x==='Fleet Rent / Income'?'RENT':x))];
     const cashOutCats=[...new Set([...Object.keys(SOURCE_DATA.expenseMap),'Investor Payment','Fleet Expense',...categories.CASH_OUT])];
 
     const ci=document.getElementById('cashInCategory'); const oldCi=ci.value; ci.innerHTML=cashInCats.map(x=>`<option value="${this.esc(x)}">${this.esc(x)}</option>`).join(''); if(cashInCats.includes(oldCi))ci.value=oldCi;
-    const cip=document.getElementById('cashInPurpose'); const oldCip=cip.value; cip.innerHTML=cashInPurposes.map(x=>`<option value="${this.esc(x)}">${this.esc(x)}</option>`).join(''); if(cashInPurposes.includes(oldCip))cip.value=oldCip;
+    const cip=document.getElementById('cashInPurpose'); const oldCip=cip.value; cip.innerHTML=cashInPurposes.map(x=>`<option value="${this.esc(x)}">${this.esc(x==='RENT'?'Fleet Rent / Income':x)}</option>`).join(''); if(cashInPurposes.includes(oldCip))cip.value=oldCip;
     const co=document.getElementById('cashOutCategory'); const oldCo=co.value; co.innerHTML=cashOutCats.map(x=>`<option value="${this.esc(x)}">${this.esc(x)}</option>`).join(''); if(cashOutCats.includes(oldCo))co.value=oldCo;
     await this.updateCashOutPurposes();
 
@@ -739,7 +739,7 @@ const app = {
     const cat=document.getElementById('cashInCategory'),pur=document.getElementById('cashInPurpose');
     if(type==='MEMBER'){cat.value='Member Deposit'; if([...pur.options].some(o=>o.value==='Installment'))pur.value='Installment';}
     if(type==='INVESTOR'){cat.value='Investor Investment'; if([...pur.options].some(o=>o.value==='Investment'))pur.value='Investment';}
-    if(type==='FLEET'){cat.value='Fleet / Rent'; if([...pur.options].some(o=>o.value==='Fleet Rent / Income'))pur.value='Fleet Rent / Income';}
+    if(type==='FLEET'){cat.value='Fleet / Rent'; if([...pur.options].some(o=>o.value==='RENT'))pur.value='RENT';}
     if(type==='OTHER'){cat.value='Other Income'; if([...pur.options].some(o=>o.value==='Other Income'))pur.value='Other Income';}
   },
   async updateCashOutContext(){
