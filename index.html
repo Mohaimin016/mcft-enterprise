@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260924-17">
+<meta name="mcft-build" content="20260924-18">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -1073,12 +1073,33 @@ const app = {
   },
 
   async renderFleets(){
-    const all=await this.getAll('transactions'); const fleets=await this.getAll('fleets'); const selected=document.getElementById('fleetPortalFilter')?.value||''; const relevant=all.filter(t=>t.status!=='VOID'&&t.entityType==='FLEET'&&(!selected||t.fleetName===selected));
-    const names=selected?[selected]:fleets.map(f=>f.name);
-    const summary=names.map(name=>{const f=fleets.find(x=>x.name===name)||{}; const tx=relevant.filter(t=>t.fleetName===name); const income=tx.filter(t=>t.type==='CASH_IN').reduce((s,t)=>s+Number(t.amount||0),0); const purchase=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='PURCHASE_INVESTMENT').reduce((s,t)=>s+Number(t.amount||0),0); const fuel=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='FUEL').reduce((s,t)=>s+Number(t.amount||0),0); const maint=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='MAINTENANCE').reduce((s,t)=>s+Number(t.amount||0),0); const expense=tx.filter(t=>t.type==='CASH_OUT').reduce((s,t)=>s+Number(t.amount||0),0); const last=[...tx].sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]?.date||''; return {name,vehicleNumber:f.vehicleNumber||'',driverName:f.driverName||'',purchase,fuel,maint,income,expense,currentValue:Number(f.currentValue||0),details:f.details||'',last};});
+    const all=await this.getAll('transactions');
+    const fleets=await this.getAll('fleets');
+    const selected=document.getElementById('fleetPortalFilter')?.value||'';
+    const selectedFleet=fleets.find(f=>String(f.id)===String(selected)||String(f.name)===String(selected));
+    const relevant=all.filter(t=>{
+      if(t.status==='VOID'||t.entityType!=='FLEET') return false;
+      if(!selected) return true;
+      return String(t.fleetId||'')===String(selectedFleet?.id||selected) || String(t.fleetName||'')===String(selectedFleet?.name||selected);
+    });
+    const fleetRows=selectedFleet?[selectedFleet]:fleets;
+    const summary=fleetRows.map(f=>{
+      const name=f.name||f.vehicleName||'';
+      const tx=relevant.filter(t=>String(t.fleetId||'')===String(f.id||'') || String(t.fleetName||'')===String(name));
+      const income=tx.filter(t=>t.type==='CASH_IN').reduce((s,t)=>s+Number(t.amount||0),0);
+      const purchase=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='PURCHASE_INVESTMENT').reduce((s,t)=>s+Number(t.amount||0),0);
+      const fuel=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='FUEL').reduce((s,t)=>s+Number(t.amount||0),0);
+      const maint=tx.filter(t=>t.type==='CASH_OUT'&&t.purpose==='MAINTENANCE').reduce((s,t)=>s+Number(t.amount||0),0);
+      const expense=tx.filter(t=>t.type==='CASH_OUT').reduce((s,t)=>s+Number(t.amount||0),0);
+      const last=[...tx].sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]?.date||'';
+      return {id:f.id,name,vehicleNumber:f.vehicleNumber||'',driverName:f.driverName||'',purchase,fuel,maint,income,expense,currentValue:Number(f.currentValue||0),details:f.details||'',last};
+    });
     const total=summary.reduce((a,x)=>({income:a.income+x.income,expense:a.expense+x.expense,value:a.value+x.currentValue}),{income:0,expense:0,value:0});
-    document.getElementById('fleetPortalIncome').textContent=this.fmt(total.income); document.getElementById('fleetPortalExpense').textContent=this.fmt(total.expense); document.getElementById('fleetPortalNet').textContent=this.fmt(total.income-total.expense); document.getElementById('fleetPortalValue').textContent=this.fmt(total.value);
-    document.getElementById('fleetBody').innerHTML=summary.length?summary.sort((a,b)=>b.income-a.income).map((x,i)=>`<tr><td>${i+1}</td><td>${this.esc(x.name)}</td><td>${this.esc(x.vehicleNumber)}</td><td>${this.esc(x.driverName)}</td><td>${this.fmt(x.purchase)}</td><td>${this.fmt(x.fuel)}</td><td>${this.fmt(x.maint)}</td><td>${this.fmt(x.income)}</td><td>${this.fmt(x.expense)}</td><td>${this.fmt(x.currentValue)}</td><td>${this.esc(x.details)}</td></tr>`).join(''):'<tr><td colspan="11" class="empty">No fleet transactions found</td></tr>';
+    document.getElementById('fleetPortalIncome').textContent=this.fmt(total.income);
+    document.getElementById('fleetPortalExpense').textContent=this.fmt(total.expense);
+    document.getElementById('fleetPortalNet').textContent=this.fmt(total.income-total.expense);
+    document.getElementById('fleetPortalValue').textContent=this.fmt(total.value);
+    document.getElementById('fleetBody').innerHTML=summary.length?summary.sort((a,b)=>b.income-a.income).map((x,i)=>`<tr><td>${i+1}</td><td>${this.esc(x.name)}</td><td>${this.esc(x.vehicleNumber)}</td><td>${this.esc(x.driverName)}</td><td>${this.fmt(x.purchase)}</td><td>${this.fmt(x.fuel)}</td><td>${this.fmt(x.maint)}</td><td>${this.fmt(x.income)}</td><td>${this.fmt(x.expense)}</td><td>${this.fmt(x.currentValue)}</td><td>${this.esc(x.details)}</td></tr>`).join(''):'<tr><td colspan="11" class="empty">No fleet records found</td></tr>';
     const txs=relevant.sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.createdAt||'').localeCompare(a.createdAt||''));
     document.getElementById('fleetTxBody').innerHTML=txs.length?txs.map(t=>`<tr><td>${this.esc(t.transactionId)}</td><td>${this.esc(t.date)}</td><td>${t.type==='CASH_IN'?'Cash In':'Cash Out'}</td><td>${this.esc(t.purpose)}</td><td>${this.fmt(t.amount)}</td><td>${this.esc(t.fleetName)}</td><td>${this.esc(t.details)}</td><td><span class="badge ${t.status==='ACTIVE'?'badge-active':'badge-void'}">${this.esc(t.status)}</span></td></tr>`).join(''):'<tr><td colspan="8" class="empty">No fleet transactions found</td></tr>';
   },
