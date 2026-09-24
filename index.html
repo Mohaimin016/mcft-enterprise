@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260924-22">
+<meta name="mcft-build" content="20260924-23">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -2123,11 +2123,11 @@ window.numericExcelAmount = function(v){
       else if(title==='Void Entries')data=all.filter(t=>t.status==='VOID');
       const investorMap=new Map((await this.getAll('investors',{force:true})).map(x=>[String(x.id),String(x.name||'')]));
       const fleetMap=new Map((await this.getAll('fleets',{force:true})).map(x=>[String(x.id),String(x.name||x.vehicleName||'')]));
-      headers=['#','ID','Type','Investor Name','Fleet Name','Investor/Fleet ID','Transaction Date','Capture Date/Time','Amount','Category','Purpose','Withdrawal Person','Depositor','Details','Status'];
+      headers=['#','ID','Type','Transaction Date','Capture Date/Time','Amount','Category','Investor Name','Fleet Name','Investor/Fleet ID','Purpose','Withdrawal Person','Depositor','Details','Status'];
       rows=data.map((t,i)=>{
         const investorName=String(t.investorName||investorMap.get(String(t.investorId||''))||(t.entityType==='INVESTOR'?(t.depositor||t.memberName||''):''));
         const fleetName=t.fleetName||fleetMap.get(String(t.fleetId||''))||'';
-        return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',investorName,fleetName,String(t.investorId||t.fleetId||''),t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.details,t.status];
+        return [i+1,t.transactionId,t.type==='CASH_IN'?'Cash In':'Expense',t.date,t.captureDateTime||t.createdAt||'',Number(t.amount||0),t.category,investorName,fleetName,String(t.investorId||t.fleetId||''),t.purpose,t.withdrawalPerson,t.depositor||t.memberName||'',t.details,t.status];
       });
     }
     this.currentScoreRows=[headers].concat(rows);
