@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260924-26">
+<meta name="mcft-build" content="20260924-27">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -1053,7 +1053,7 @@ const app = {
     if((type==='MEMBER'||type==='INVESTOR'||type==='FLEET')&&!entityName){alert('Please select the required person/vehicle.');return;}
     if(amount<=0){alert('Please enter a valid amount.');return;}
     if(!confirm(`Confirm Cash In\n\nType: ${type}\nDate: ${tx.date}\nAmount: ${this.fmt(amount)}\n${entityName?'Name: '+entityName+'\n':''}Purpose: ${tx.purpose}\n\nSave this transaction?`))return;
-    try{await this.insertOnlineTransaction(tx); document.getElementById('cashInForm').reset(); this.setDates(); await this.populateForms(); alert('Cash In added successfully.'); await this.render(); await this.updateHealth();}catch(e){alert('Cash In failed: '+e.message);}
+    try{await this.insertOnlineTransaction(tx); document.getElementById('cashInForm').reset(); this.setDates(); alert('Cash In added successfully.'); Promise.allSettled([this.populateForms(),this.render(),this.updateHealth()]);}catch(e){alert('Cash In failed: '+e.message);}
   },
   async addCashOut(){
     if(!this.requireEntry()) return;
@@ -1064,7 +1064,7 @@ const app = {
     const tx={transactionId:'FIN-'+Date.now(),type:'CASH_OUT',flowCategory:type,date:document.getElementById('cashOutDate').value,amount,category:document.getElementById('cashOutCategory').value,purpose,depositor:'',withdrawalPerson,entityType:type==='EXPENSE'?'OTHER':type,investorName:type==='INVESTOR'?investor:'',fleetName:type==='FLEET'?fleet:'',memberName:type==='MEMBER'?member:'',payeePhone:document.getElementById('cashOutPhone').value.trim(),costingPoint:document.getElementById('cashOutCostingPoint').value.trim(),paymentMode:document.getElementById('cashOutPaymentMode').value,approvalStatus:document.getElementById('cashOutApproval').value,voucherNumber:document.getElementById('cashOutVoucher').value.trim(),details:document.getElementById('cashOutDetails').value.trim(),status:'ACTIVE'};
     if(type==='INVESTOR'&&!investor){alert('Please select an investor.');return;} if(type==='FLEET'&&!fleet){alert('Please select a vehicle / fleet.');return;} if(type==='MEMBER'&&!member){alert('Please select a member.');return;} if(type==='EXPENSE'&&!withdrawalPerson){alert('Please select a withdrawal person.');return;} if(amount<=0){alert('Please enter a valid amount.');return;}
     if(!confirm(`Confirm Cash Out\n\nType: ${type}\nDate: ${tx.date}\nAmount: ${this.fmt(amount)}\n${entityName?'Name: '+entityName+'\n':''}Purpose: ${purpose}\n\nSave this transaction?`))return;
-    try{await this.insertOnlineTransaction(tx); document.getElementById('cashOutForm').reset(); this.setDates(); await this.populateForms(); alert('Cash Out added successfully.'); await this.render(); await this.updateHealth();}catch(e){alert('Cash Out failed: '+e.message);}
+    try{await this.insertOnlineTransaction(tx); document.getElementById('cashOutForm').reset(); this.setDates(); alert('Cash Out added successfully.'); Promise.allSettled([this.populateForms(),this.render(),this.updateHealth()]);}catch(e){alert('Cash Out failed: '+e.message);}
   },
   async renderInvestors(){
     const all=await this.getAll('transactions'); const investors=await this.getUsersByRole('Investor'); const selected=document.getElementById('investorPortalFilter')?.value||'';
