@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260924-20">
+<meta name="mcft-build" content="20260924-21">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -99,21 +99,59 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
 .theme-switcher{display:flex;align-items:center;gap:6px;margin-left:8px}
 .theme-switcher label{color:inherit;font-size:11px;font-weight:800}
 .theme-switcher select{width:auto;min-width:150px;padding:8px 30px 8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font-weight:800;cursor:pointer}
+/* Soft Neumorphic — 30% deeper, pure black text */
 body[data-theme="soft-neumorph"]{
-  --navy:#59636d;--blue:#6689b8;--green:#4f9b7b;--red:#bd6971;--bg:#e5e9ef;--card:#e5e9ef;
-  --border:#d5dbe3;--text:#3e4752;--muted:#7b8794;--gold:#b68a4a;
-  --shadow:10px 10px 22px #c4cad2,-10px -10px 22px #ffffff
+  --navy:#000000;--blue:#456b96;--green:#39775b;--red:#9b4f57;--bg:#bfc4cc;--card:#bfc4cc;
+  --border:#aeb5be;--text:#000000;--muted:#111111;--gold:#8a642d;
+  --shadow:10px 10px 22px #9fa6ae,-10px -10px 22px #dfe3e8
 }
-body[data-theme="soft-neumorph"] header{background:#e5e9ef;color:#3e4752;box-shadow:0 8px 20px #c5cbd3}
-body[data-theme="soft-neumorph"] .filter-section,body[data-theme="soft-neumorph"] .panel,body[data-theme="soft-neumorph"] .chart-container,body[data-theme="soft-neumorph"] .form-section,body[data-theme="soft-neumorph"] .card,body[data-theme="soft-neumorph"] .modal-content{background:#e5e9ef;border:1px solid #d8dde4;box-shadow:var(--shadow)}
-body[data-theme="soft-neumorph"] .nav button,body[data-theme="soft-neumorph"] .btn-secondary,body[data-theme="soft-neumorph"] .btn-small{background:#e5e9ef;color:#4b5662;border:1px solid #d7dde4;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
-body[data-theme="soft-neumorph"] .nav button.active{background:#e5e9ef;color:#4e79a8;box-shadow:inset 4px 4px 8px #c6ccd4,inset -4px -4px 8px #fff}
-body[data-theme="soft-neumorph"] input,body[data-theme="soft-neumorph"] select,body[data-theme="soft-neumorph"] textarea{background:#e5e9ef;color:#3e4752;border:1px solid #d7dde4;box-shadow:inset 4px 4px 8px #c6ccd4,inset -4px -4px 8px #fff}
-body[data-theme="soft-neumorph"] th{background:#dfe4ea;color:#4a5562}body[data-theme="soft-neumorph"] td{border-color:#d2d8df}
-body[data-theme="soft-neumorph"] .month-box,body[data-theme="soft-neumorph"] .conditional-panel,body[data-theme="soft-neumorph"] .portal-summary .month-box{background:#e5e9ef;border-color:#d5dbe2;box-shadow:inset 3px 3px 7px #c7cdd5,inset -3px -3px 7px #fff}
-body[data-theme="soft-neumorph"] .btn-primary{background:#e5e9ef;color:#547ca8;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
-body[data-theme="soft-neumorph"] .btn-success{background:#e5e9ef;color:#3e8b6b;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
-body[data-theme="soft-neumorph"] .modal{background:rgba(180,188,198,.55)}
+body[data-theme="soft-neumorph"] header{background:#bfc4cc;color:#000!important;box-shadow:0 8px 20px #9fa6ae}
+body[data-theme="soft-neumorph"] .filter-section,
+body[data-theme="soft-neumorph"] .panel,
+body[data-theme="soft-neumorph"] .chart-container,
+body[data-theme="soft-neumorph"] .form-section,
+body[data-theme="soft-neumorph"] .card,
+body[data-theme="soft-neumorph"] .modal-content,
+body[data-theme="soft-neumorph"] .month-box,
+body[data-theme="soft-neumorph"] .conditional-panel,
+body[data-theme="soft-neumorph"] .portal-summary,
+body[data-theme="soft-neumorph"] .table-container,
+body[data-theme="soft-neumorph"] .score-card,
+body[data-theme="soft-neumorph"] .summary-card{
+  background:#bfc4cc!important;color:#000!important;border-color:#aeb5be!important;box-shadow:var(--shadow)
+}
+body[data-theme="soft-neumorph"] *{color:#000}
+body[data-theme="soft-neumorph"] .muted,
+body[data-theme="soft-neumorph"] .help,
+body[data-theme="soft-neumorph"] .score-note,
+body[data-theme="soft-neumorph"] .dashboard-capture,
+body[data-theme="soft-neumorph"] .card-subtitle,
+body[data-theme="soft-neumorph"] small{color:#000!important}
+body[data-theme="soft-neumorph"] input,
+body[data-theme="soft-neumorph"] select,
+body[data-theme="soft-neumorph"] textarea,
+body[data-theme="soft-neumorph"] .popup-search{
+  background:#bfc4cc!important;color:#000!important;border:1px solid #aeb5be!important;
+  box-shadow:inset 4px 4px 8px #9fa6ae,inset -4px -4px 8px #dfe3e8
+}
+body[data-theme="soft-neumorph"] input::placeholder,
+body[data-theme="soft-neumorph"] textarea::placeholder{color:#000!important;opacity:.7}
+body[data-theme="soft-neumorph"] option{background:#bfc4cc!important;color:#000!important}
+body[data-theme="soft-neumorph"] th{background:#adb4bd!important;color:#000!important}
+body[data-theme="soft-neumorph"] td{background:#bfc4cc!important;color:#000!important;border-color:#aeb5be!important}
+body[data-theme="soft-neumorph"] .nav button,
+body[data-theme="soft-neumorph"] .btn-secondary,
+body[data-theme="soft-neumorph"] .btn-small,
+body[data-theme="soft-neumorph"] .btn-primary,
+body[data-theme="soft-neumorph"] .btn-success{
+  background:#bfc4cc!important;color:#000!important;border-color:#aeb5be!important;
+  box-shadow:5px 5px 10px #9fa6ae,-5px -5px 10px #dfe3e8
+}
+body[data-theme="soft-neumorph"] .nav button.active{color:#000!important;box-shadow:inset 4px 4px 8px #9fa6ae,inset -4px -4px 8px #dfe3e8}
+body[data-theme="soft-neumorph"] .modal{background:rgba(90,96,104,.55)}
+body[data-theme="soft-neumorph"] .theme-switcher label,
+body[data-theme="soft-neumorph"] .theme-switcher select{color:#000!important}
+body[data-theme="soft-neumorph"] .theme-switcher select{background:#bfc4cc!important;border-color:#aeb5be!important}
 </style>
 <script>
 (function(){
