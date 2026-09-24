@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta name="mcft-build" content="20260924-15">
+<meta name="mcft-build" content="20260924-16">
 <title>MCFT Enterprise - Online</title>
 
 <style>
@@ -94,7 +94,77 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
 .auth-modal{width:min(440px,96vw)}
 .auth-message{font-size:12px;color:#b42318;min-height:18px;margin-top:6px}
 .auth-hidden{display:none!important}
+
+/* ===== MCFT Theme Pack ===== */
+.theme-switcher{display:flex;align-items:center;gap:6px;margin-left:8px}
+.theme-switcher label{color:inherit;font-size:11px;font-weight:800}
+.theme-switcher select{width:auto;min-width:150px;padding:8px 30px 8px 10px;border-radius:9px;border:1px solid var(--border);background:var(--card);color:var(--text);font-weight:800;cursor:pointer}
+body[data-theme="aurora"]{
+  --navy:#070b18;--blue:#7c5cff;--green:#20e0c1;--red:#ff5f7a;--bg:#050711;--card:rgba(18,22,39,.82);
+  --border:rgba(120,240,255,.20);--text:#f4f7ff;--muted:#9aa7c2;--gold:#a98cff;
+  --shadow:0 12px 38px rgba(0,0,0,.42),0 0 28px rgba(89,221,255,.08)
+}
+body[data-theme="aurora"] header{background:linear-gradient(135deg,#050712,#101631 55%,#24134d);box-shadow:0 8px 35px rgba(0,0,0,.45)}
+body[data-theme="aurora"] .filter-section,body[data-theme="aurora"] .panel,body[data-theme="aurora"] .chart-container,body[data-theme="aurora"] .form-section,body[data-theme="aurora"] .card,body[data-theme="aurora"] .modal-content{background:linear-gradient(145deg,rgba(21,28,49,.94),rgba(9,13,27,.94));border-color:rgba(102,232,255,.18)}
+body[data-theme="aurora"] .nav button,body[data-theme="aurora"] .btn-secondary,body[data-theme="aurora"] .btn-small{background:#11172b;color:#eaf1ff;border-color:rgba(120,240,255,.18)}
+body[data-theme="aurora"] .nav button.active{background:linear-gradient(135deg,#684cff,#9b59ff)}
+body[data-theme="aurora"] input,body[data-theme="aurora"] select,body[data-theme="aurora"] textarea{background:#0d1325;color:#f4f7ff;border-color:#263452}
+body[data-theme="aurora"] th{background:#151d34;color:#dce8ff}body[data-theme="aurora"] td{border-color:#202b43}
+body[data-theme="aurora"] .month-box,body[data-theme="aurora"] .conditional-panel,body[data-theme="aurora"] .portal-summary .month-box{background:#0e1528;border-color:#263452}
+body[data-theme="aurora"] .card-value{color:#fff;text-shadow:0 0 18px rgba(91,225,255,.22)}
+body[data-theme="aurora"] .btn-primary{background:linear-gradient(135deg,#7254ff,#a05cff)}body[data-theme="aurora"] .btn-success{background:linear-gradient(135deg,#12bfa9,#27e6c2)}
+body[data-theme="aurora"] .modal{background:rgba(0,0,0,.72)}
+
+body[data-theme="dark-neumorph"]{
+  --navy:#1d2426;--blue:#4da6ff;--green:#45d483;--red:#ff6675;--bg:#252c2e;--card:#252c2e;
+  --border:#30393b;--text:#eef3f3;--muted:#9aa5a7;--gold:#f0b85a;
+  --shadow:12px 12px 24px #1b2022,-10px -10px 22px #30383a
+}
+body[data-theme="dark-neumorph"] header{background:#252c2e;box-shadow:inset 0 -1px 0 #31393b,0 8px 20px rgba(0,0,0,.25)}
+body[data-theme="dark-neumorph"] .filter-section,body[data-theme="dark-neumorph"] .panel,body[data-theme="dark-neumorph"] .chart-container,body[data-theme="dark-neumorph"] .form-section,body[data-theme="dark-neumorph"] .card,body[data-theme="dark-neumorph"] .modal-content{background:#252c2e;border:1px solid #2c3537;box-shadow:var(--shadow)}
+body[data-theme="dark-neumorph"] .nav button,body[data-theme="dark-neumorph"] .btn-secondary,body[data-theme="dark-neumorph"] .btn-small{background:#252c2e;color:#eef3f3;border:1px solid #30383a;box-shadow:5px 5px 10px #1b2022,-5px -5px 10px #30383a}
+body[data-theme="dark-neumorph"] .nav button.active{background:#252c2e;color:#65c7ff;box-shadow:inset 4px 4px 8px #1b2022,inset -4px -4px 8px #30383a}
+body[data-theme="dark-neumorph"] input,body[data-theme="dark-neumorph"] select,body[data-theme="dark-neumorph"] textarea{background:#252c2e;color:#eef3f3;border:1px solid #30383a;box-shadow:inset 4px 4px 8px #1c2224,inset -4px -4px 8px #30383a}
+body[data-theme="dark-neumorph"] th{background:#30383a;color:#eef3f3}body[data-theme="dark-neumorph"] td{border-color:#343d3f}
+body[data-theme="dark-neumorph"] .month-box,body[data-theme="dark-neumorph"] .conditional-panel,body[data-theme="dark-neumorph"] .portal-summary .month-box{background:#252c2e;border-color:#30383a;box-shadow:inset 3px 3px 7px #1b2022,inset -3px -3px 7px #30383a}
+body[data-theme="dark-neumorph"] .card:hover{transform:translateY(-2px);box-shadow:14px 14px 28px #1b2022,-12px -12px 24px #30383a}
+body[data-theme="dark-neumorph"] .btn-primary{background:#252c2e;color:#61b9ff;box-shadow:5px 5px 10px #1b2022,-5px -5px 10px #30383a}
+body[data-theme="dark-neumorph"] .modal{background:rgba(15,19,20,.72)}
+
+body[data-theme="soft-neumorph"]{
+  --navy:#59636d;--blue:#6689b8;--green:#4f9b7b;--red:#bd6971;--bg:#e5e9ef;--card:#e5e9ef;
+  --border:#d5dbe3;--text:#3e4752;--muted:#7b8794;--gold:#b68a4a;
+  --shadow:10px 10px 22px #c4cad2,-10px -10px 22px #ffffff
+}
+body[data-theme="soft-neumorph"] header{background:#e5e9ef;color:#3e4752;box-shadow:0 8px 20px #c5cbd3}
+body[data-theme="soft-neumorph"] .filter-section,body[data-theme="soft-neumorph"] .panel,body[data-theme="soft-neumorph"] .chart-container,body[data-theme="soft-neumorph"] .form-section,body[data-theme="soft-neumorph"] .card,body[data-theme="soft-neumorph"] .modal-content{background:#e5e9ef;border:1px solid #d8dde4;box-shadow:var(--shadow)}
+body[data-theme="soft-neumorph"] .nav button,body[data-theme="soft-neumorph"] .btn-secondary,body[data-theme="soft-neumorph"] .btn-small{background:#e5e9ef;color:#4b5662;border:1px solid #d7dde4;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
+body[data-theme="soft-neumorph"] .nav button.active{background:#e5e9ef;color:#4e79a8;box-shadow:inset 4px 4px 8px #c6ccd4,inset -4px -4px 8px #fff}
+body[data-theme="soft-neumorph"] input,body[data-theme="soft-neumorph"] select,body[data-theme="soft-neumorph"] textarea{background:#e5e9ef;color:#3e4752;border:1px solid #d7dde4;box-shadow:inset 4px 4px 8px #c6ccd4,inset -4px -4px 8px #fff}
+body[data-theme="soft-neumorph"] th{background:#dfe4ea;color:#4a5562}body[data-theme="soft-neumorph"] td{border-color:#d2d8df}
+body[data-theme="soft-neumorph"] .month-box,body[data-theme="soft-neumorph"] .conditional-panel,body[data-theme="soft-neumorph"] .portal-summary .month-box{background:#e5e9ef;border-color:#d5dbe2;box-shadow:inset 3px 3px 7px #c7cdd5,inset -3px -3px 7px #fff}
+body[data-theme="soft-neumorph"] .btn-primary{background:#e5e9ef;color:#547ca8;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
+body[data-theme="soft-neumorph"] .btn-success{background:#e5e9ef;color:#3e8b6b;box-shadow:5px 5px 10px #c6ccd4,-5px -5px 10px #fff}
+body[data-theme="soft-neumorph"] .modal{background:rgba(180,188,198,.55)}
 </style>
+<script>
+(function(){
+  const KEY='mcft-theme';
+  const applyTheme=t=>{
+    const v=['classic','aurora','dark-neumorph','soft-neumorph'].includes(t)?t:'classic';
+    document.body.dataset.theme=v;
+    const s=document.getElementById('themeSelect');if(s)s.value=v;
+    try{localStorage.setItem(KEY,v)}catch(e){}
+  };
+  window.setMCFTTheme=applyTheme;
+  document.addEventListener('DOMContentLoaded',()=>{
+    let saved='classic';try{saved=localStorage.getItem(KEY)||'classic'}catch(e){}
+    const s=document.getElementById('themeSelect');
+    if(s)s.addEventListener('change',e=>applyTheme(e.target.value));
+    applyTheme(saved);
+  });
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
@@ -102,7 +172,7 @@ th{background:#f1f4f8;color:#344054;font-weight:800;position:sticky;top:0;z-inde
 <header>
   <div class="header-row">
     <div class="brand">🏢 MCFT Enterprise <span class="entity-badge">ONLINE</span> <span style="font-size:10px;opacity:.7" title="Build updated 23 Sep 2026">V10</span></div>
-    <div style="font-size:11px;opacity:.9;margin-right:auto">● <span id="dbHealth">Database: checking…</span> · <span id="backupHealth">Backup: checking…</span> · <span id="authUserBadge" class="auth-badge">Viewer</span></div><div class="header-actions">
+    <div style="font-size:11px;opacity:.9;margin-right:auto">● <span id="dbHealth">Database: checking…</span> · <span id="backupHealth">Backup: checking…</span> · <span id="authUserBadge" class="auth-badge">Viewer</span></div><div class="theme-switcher"><label for="themeSelect">Theme</label><select id="themeSelect" aria-label="Choose theme"><option value="classic">Classic MCFT</option><option value="aurora">Aurora Neon</option><option value="dark-neumorph">Dark Neumorphic</option><option value="soft-neumorph">Soft Neumorphic</option></select></div><div class="header-actions">
       <button id="btnBackup" class="btn btn-secondary auth-hidden" onclick="app.backup()">📥 Backup</button>
       <button id="btnRestore" class="btn btn-secondary auth-hidden" onclick="app.restoreUI()">📤 Restore</button>
       <button id="btnNewEntry" class="btn btn-primary auth-hidden" onclick="app.showSection('entry');app.scrollToEntry()">➕ New Entry</button>
